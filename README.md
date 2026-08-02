@@ -86,12 +86,12 @@ npm run dev:web      # Web sur :5173 (vite, proxy → :5000)
 
 ## Qualité & tests
 
-| Commande                        | Contenu                                                                                                                                                                             |
-| ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `npm test`                      | **136 tests** : 81 API (vitest + pg-mem, schéma V2 réel) + 55 web                                                                                                                   |
-| `npm run typecheck`             | TypeScript strict, zéro `any` non maîtrisé                                                                                                                                          |
-| `npm run build`                 | API (tsc → dist/) + Web (vite → dist/)                                                                                                                                              |
-| `npm run format`                | Prettier sur tout le dépôt                                                                                                                                                          |
+| Commande             | Contenu                                                                                                                                                                             |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `npm test`           | **136 tests** : 81 API (vitest + pg-mem, schéma V2 réel) + 55 web                                                                                                                   |
+| `npm run typecheck`  | TypeScript strict, zéro `any` non maîtrisé                                                                                                                                          |
+| `npm run build`      | API (tsc → dist/) + Web (vite → dist/)                                                                                                                                              |
+| `npm run format`     | Prettier sur tout le dépôt                                                                                                                                                          |
 | CI (`deploy/ci.yml`) | migrations ×2 sur **vraie Postgres 16**, seed rejouable, tests API/web, build, **migration V1→V2 bout-en-bout**, **fumée `docker compose` complète** (register → login → API → web) |
 
 Sécurité par conception : RBAC testé croisé-tenant, isolation multi-tenant en SQL,

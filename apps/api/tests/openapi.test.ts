@@ -39,7 +39,9 @@ function actualRoutes(): Array<{ method: string; path: string }> {
       path.join(__dirname, "..", "src", "routes", file),
       "utf8",
     );
-    const re = /router\.(get|post|patch|put|delete)\(\s*\n?\s*'([^']+)'/g;
+    // Tolère ' et " — prettier normalise parfois le style des fichiers source.
+    const re =
+      /router\.(get|post|patch|put|delete)\(\s*\n?\s*['"]([^'"]+)['"]/g;
     let m: RegExpExecArray | null;
     while ((m = re.exec(src)) !== null) {
       let p = `${mount}${m[2] === "/" ? "" : m[2]}`;
