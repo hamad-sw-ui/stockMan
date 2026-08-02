@@ -11,7 +11,7 @@ export interface OutboxEntry {
   /** Corps POST /api/sales (items, paymentMethod, createdAt…). */
   payload: Record<string, unknown>;
   createdAt: number;
-  status: 'QUEUED' | 'SYNCING' | 'FAILED';
+  status: "QUEUED" | "SYNCING" | "FAILED";
   attempts: number;
   lastError?: string;
   /** Libellé convivial pour l'UI (n° de ticket local, total). */
@@ -29,15 +29,23 @@ interface OutboxStore {
 /* ---------------------------------- Mémoire ---------------------------------- */
 class MemoryStore implements OutboxStore {
   private map = new Map<string, OutboxEntry>();
-  async put(e: OutboxEntry) { this.map.set(e.clientSaleId, structuredClone(e)); }
-  async get(id: string) { return this.map.get(id) ? structuredClone(this.map.get(id)!) : undefined; }
-  async delete(id: string) { this.map.delete(id); }
-  async all() { return [...this.map.values()].map((e) => structuredClone(e)); }
+  async put(e: OutboxEntry) {
+    this.map.set(e.clientSaleId, structuredClone(e));
+  }
+  async get(id: string) {
+    return this.map.get(id) ? structuredClone(this.map.get(id)!) : undefined;
+  }
+  async delete(id: string) {
+    this.map.delete(id);
+  }
+  async all() {
+    return [...this.map.values()].map((e) => structuredClone(e));
+  }
 }
 
 /* --------------------------------- IndexedDB --------------------------------- */
-const DB_NAME = 'stockman-offline';
-const STORE = 'outbox';
+const DB_NAME = "stockman-offline";
+const STORE = "outbox";
 
 class IdbStore implements OutboxStore {
   private dbp: Promise<IDBDatabase> | null = null;
@@ -48,31 +56,46 @@ class IdbStore implements OutboxStore {
       req.onupgradeneeded = () => {
         const db = req.result;
         if (!db.objectStoreNames.contains(STORE)) {
-          const store = db.createObjectStore(STORE, { keyPath: 'clientSaleId' });
-          store.createIndex('createdAt', 'createdAt');
+          const store = db.createObjectStore(STORE, {
+            keyPath: "clientSaleId",
+          });
+          store.createIndex("createdAt", "createdAt");
         }
       };
       req.onsuccess = () => resolve(req.result);
-      req.onerror = () => reject(req.error ?? new Error('IndexedDB indisponible'));
+      req.onerror = () =>
+        reject(req.error ?? new Error("IndexedDB indisponible"));
     });
     return this.dbp;
   }
 
-  private async tx<T>(mode: IDBTransactionMode, run: (s: IDBObjectStore) => IDBRequest<T>): Promise<T> {
+  private async tx<T>(
+    mode: IDBTransactionMode,
+    run: (s: IDBObjectStore) => IDBRequest<T>,
+  ): Promise<T> {
     const db = await this.db();
     return new Promise<T>((resolve, reject) => {
       const t = db.transaction(STORE, mode);
       const req = run(t.objectStore(STORE));
       req.onsuccess = () => resolve(req.result);
-      req.onerror = () => reject(req.error ?? new Error('Erreur IndexedDB'));
+      req.onerror = () => reject(req.error ?? new Error("Erreur IndexedDB"));
     });
   }
 
-  async put(e: OutboxEntry) { await this.tx('readwrite', (s) => s.put(e)); }
-  async get(id: string) { return (await this.tx('readonly', (s) => s.get(id))) as OutboxEntry | undefined; }
-  async delete(id: string) { await this.tx('readwrite', (s) => s.delete(id)); }
+  async put(e: OutboxEntry) {
+    await this.tx("readwrite", (s) => s.put(e));
+  }
+  async get(id: string) {
+    return (await this.tx("readonly", (s) => s.get(id))) as
+      OutboxEntry | undefined;
+  }
+  async delete(id: string) {
+    await this.tx("readwrite", (s) => s.delete(id));
+  }
   async all() {
-    const rows = (await this.tx('readonly', (s) => s.getAll())) as OutboxEntry[];
+    const rows = (await this.tx("readonly", (s) =>
+      s.getAll(),
+    )) as OutboxEntry[];
     return rows.sort((a, b) => a.createdAt - b.createdAt);
   }
 }
@@ -81,7 +104,8 @@ class IdbStore implements OutboxStore {
 let store: OutboxStore | null = null;
 function getStore(): OutboxStore {
   if (!store) {
-    store = typeof indexedDB !== 'undefined' ? new IdbStore() : new MemoryStore();
+    store =
+      typeof indexedDB !== "undefined" ? new IdbStore() : new MemoryStore();
   }
   return store;
 }
@@ -93,19 +117,23 @@ export function _setStoreForTests(s: OutboxStore | null) {
 /* --------------------------------- API publique -------------------------------- */
 
 export function newClientSaleId(): string {
-  return typeof crypto !== 'undefined' && 'randomUUID' in crypto
+  return typeof crypto !== "undefined" && "randomUUID" in crypto
     ? crypto.randomUUID()
     : `${Date.now().toString(16)}-${Math.random().toString(16).slice(2, 10)}`;
 }
 
 /** Enfile une vente. Idempotent : un clientSaleId existant n'est pas ré-enfilé. */
-export async function enqueueSale(entry: Omit<OutboxEntry, 'status' | 'attempts' | 'createdAt'> & { createdAt?: number }): Promise<OutboxEntry> {
+export async function enqueueSale(
+  entry: Omit<OutboxEntry, "status" | "attempts" | "createdAt"> & {
+    createdAt?: number;
+  },
+): Promise<OutboxEntry> {
   const existing = await getStore().get(entry.clientSaleId);
   if (existing) return existing;
   const full: OutboxEntry = {
     ...entry,
     createdAt: entry.createdAt ?? Date.now(),
-    status: 'QUEUED',
+    status: "QUEUED",
     attempts: 0,
   };
   await getStore().put(full);
@@ -119,17 +147,23 @@ export async function listOutbox(): Promise<OutboxEntry[]> {
 }
 
 export async function countQueued(): Promise<number> {
-  return (await getStore().all()).filter((e) => e.status !== 'SYNCING').length;
+  return (await getStore().all()).filter((e) => e.status !== "SYNCING").length;
 }
 
 export async function markSyncing(id: string): Promise<void> {
   const e = await getStore().get(id);
-  if (e) await getStore().put({ ...e, status: 'SYNCING', attempts: e.attempts + 1 });
+  if (e)
+    await getStore().put({ ...e, status: "SYNCING", attempts: e.attempts + 1 });
 }
 
 export async function markFailed(id: string, message: string): Promise<void> {
   const e = await getStore().get(id);
-  if (e) await getStore().put({ ...e, status: 'FAILED', lastError: message.slice(0, 300) });
+  if (e)
+    await getStore().put({
+      ...e,
+      status: "FAILED",
+      lastError: message.slice(0, 300),
+    });
 }
 
 /** Vente confirmée par le serveur : sortie de file définitive. */
@@ -140,7 +174,8 @@ export async function removeEntry(id: string): Promise<void> {
 /** Remise en file d'une FAILED (action utilisateur « Réessayer »). */
 export async function retryEntry(id: string): Promise<void> {
   const e = await getStore().get(id);
-  if (e && e.status === 'FAILED') await getStore().put({ ...e, status: 'QUEUED', lastError: undefined });
+  if (e && e.status === "FAILED")
+    await getStore().put({ ...e, status: "QUEUED", lastError: undefined });
 }
 
 export async function clearOutboxForTests(): Promise<void> {

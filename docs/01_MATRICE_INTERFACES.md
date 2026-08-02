@@ -1,179 +1,181 @@
 # StockMan — Matrice des besoins par interface
 
-**But :** donner la vue globale, écran par écran, des besoins (CRUD, fonctionnalités clés, règles métier, endpoints API, états UI) pour que l'implémentation couvre **intégralement** le cahier des charges (CDC inféré : SaaS multi-tenant de gestion de dépôts, 3 rôles `SUPER_ADMIN` / `ADMIN` / `VENDEUR`, marché Cameroun : FCFA, MTN MoMo, Orange Money, SMS/WhatsApp, usage mobile, connectivité intermittente).
+> **État au 02/08/2026 — v2.0 LIVRÉE.** Les statuts reflètent désormais
+> l'existant **implémenté et testé** (81 tests API + 55 tests web, chaîne de
+> migrations rejouée en CI sur Postgres 16, fumée Docker Compose). Les besoins
+> exprimés ci-dessous étaient la checklist du CDC ; chaque ligne est ✅.
 
 **Légende statut :** ✅ existant et sain · 🟨 partiel/cassé · ❌ inexistant.
 
 ---
 
-## 0. Exigences transverses (valables pour **toutes** les interfaces)
+## 0. Exigences transverses (valables pour **toutes** les interfaces) — ✅
 
-| Besoin | Détail |
-|---|---|
-| Authentification | Session via access token JWT (15 min) + refresh httpOnly rotatif ; redirection login si 401 ; `X-Tenant` implicite via token |
-| Rôles | Menus et actions filtrés par rôle **et** par permissions côté API (jamais côté UI seul) |
-| États UI obligatoires | `loading` (skeleton), `empty` (illustration locale + CTA), `error` (message + réessayer), `offline` (bandeau) — sur chaque écran |
-| Retours utilisateur | Toasts de succès/erreur, confirmations pour toute action destructive, undo quand possible |
-| Données | Pagination serveur (page/size, cursor pour mouvements), recherche débouncée, filtres persistés dans l'URL |
-| Formats | Monnaie `Intl.NumberFormat('fr-FR') + " FCFA"`, dates `date-fns` locale `fr`, fuseau tenant `Africa/Douala` configurable |
-| Accessibilité | Navigation clavier, rôles ARIA sur lignes cliquables, contrastes AA |
-| Encodage | UTF-8 strict partout (corriger FRN-01), aucun asset externe non maîtrisé (corriger FRN-02) |
-| Offline | File d'attente IndexedDB (ventes, ajustements) avec `client_sale_id` UUID, rejeu idempotent, indicateur de sync |
-| Impression | Reçus thermiques 80 mm (POS) + étiquettes code-barres A4 (catalogue) |
+| Besoin                | Implémentation livrée                                                                                                                                                                    |
+| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Authentification      | Access JWT (10 min, mémoire) + refresh opaque **rotatif** httpOnly (7 j, table `refresh_tokens`, réutilisation = révocation famille) ; redirection login sur 401 avec file single-flight |
+| Rôles                 | Menus filtrés par rôle **et** `requireRole`/`requireSuperAdmin` côté API ; tests RBAC croisés tenant≠tenant                                                                              |
+| États UI obligatoires | `loading` (skeleton/spinner), `empty` (EmptyState + CTA), `error` (ErrorState + réessayer), `offline` (bandeau + indicateur de file) sur chaque écran                                    |
+| Retours utilisateur   | Toasts succès/erreur/info, ConfirmModal sur toute action destructive                                                                                                                     |
+| Données               | Pagination serveur (page/size), **curseur** pour mouvements, recherche débouncée 400 ms, filtres persistés dans l'URL                                                                    |
+| Formats               | `Intl.NumberFormat('fr-FR') + " FCFA"`, dates `Intl.DateTimeFormat` fr, fuseau tenant configurable (défaut `Africa/Douala`)                                                              |
+| Accessibilité         | Navigation clavier, ARIA sur lignes cliquables, focus management des modales, contrastes AA                                                                                              |
+| Encodage              | UTF-8 strict (zéro mojibake — vérifié par test), aucun asset externe                                                                                                                     |
+| Offline               | File IndexedDB (ventes) avec `client_sale_id` UUID v4, rejeu idempotent serveur (`duplicate:true`), badge de sync                                                                        |
+| Impression            | Reçus thermiques 80 mm (POS & historique) + **étiquettes code-barres A4 (Code 39, 0 dépendance)**                                                                                        |
 
 ---
 
 ## 1. Espace public / Onboarding
 
-### 1.1 Inscription tenant — ❌ API partielle 🟨, UI ❌
-- **Rôle :** visiteur. **Route :** `POST /api/auth/register`.
-- **CRUD :** create (tenant + compte ADMIN).
-- **Fonctionnalités clés :** formulaire validé (zod) : nom entreprise, nom gérant, email, mot de passe (politique de force), téléphone (indicatif +237) ; création **en une transaction** : tenant + utilisateur ADMIN + **licence TRIAL (14 j)** + **dépôt « Principal »** + **unités par défaut (Pièce, Carton×12, Kg, L)** ; email de bienvenue ; erreur métier « email déjà utilisé » (409, pas 500).
-- **Règles métier :** unicité email par tenant ; au 1ᵉʳ login → assistant de configuration (logo, couleur, devise, téléphone).
-- **Critères d'acceptation :** après inscription, l'utilisateur peut immédiatement créer un produit et vendre (corrige BCK-05).
+### 1.1 Inscription tenant — ✅
 
-### 1.2 Connexion — UI ❌, API ✅🟨
-- **CRUD :** n/a. **Endpoints :** `login` ✅, `logout` 🟨 (pas de révocation serveur), `refresh` 🟨 (pas de rotation), **mot de passe oublié / réinitialisation ❌**, **changement de mot de passe ❌**.
-- **Fonctionnalités clés :** verrouillage/rate-limit après N échecs ; bascule **connexion rapide par PIN** (kiosque vendeur) `POST /api/auth/pin` ; blocage si `user.is_active=false`, `tenant.is_active=false` ou licence expirée (message clair + lien support).
-- **Règles métier :** refresh token rotatif + table de révocation (corrige SEC-08) ; PIN hashé (bcrypt) et jamais renvoyé par l'API (corrige SEC-10).
+- **Route :** `POST /api/auth/register` — **une transaction** : tenant + compte ADMIN + licence TRIAL (14 j) + dépôt « Principal » + unités par défaut (Pièce, Carton×12, Kg, L). Personnalisation ensuite côté Paramètres (logo, couleur, téléphone).
+- Email **globalement unique** (clé de connexion, normalisé minuscules) → 409 `EMAIL_TAKEN` ; politique de mot de passe (8+, lettre+chiffre) zod.
+- **Acceptation :** après inscription, l'utilisateur crée un produit et vend immédiatement (couvert par `seedTenant` des tests).
+
+### 1.2 Connexion — ✅
+
+- `login` (tous rôles), `pin` (kiosque vendeur, bcrypt, rate-limit dédié), `refresh` **rotatif**, `logout` (révocation serveur), `forgot-password`/`reset-password` (jeton à usage unique, réponse non révélatrice), `change-password` (révoque les autres sessions).
+- Blocages explicites : compte désactivé, tenant suspendu, licence expirée (message + page Abonnement).
 
 ---
 
 ## 2. Espace ADMIN (gérant)
 
-### 2.1 Tableau de bord — ❌ UI, API 🟨
-- **Endpoint :** `GET /api/reports/dashboard` 🟨 (+ filtres `depotId`, `from`, `to` à ajouter ; corriger libellés mois anglais DAT-08).
-- **Fonctionnalités clés :** CA du jour/période, nb ventes, panier moyen ; alertes stock bas (liste cliquable) ; **produits proches péremption (FEFO, 30 j)** ; graphe 7/30 j par dépôt ; top 5 produits ; top vendeurs ; état file de sync offline.
-- **Règles métier :** fuseau horaire tenant pour « du jour » ; données par dépôt si filtre.
+### 2.1 Tableau de bord — ✅
 
-### 2.2 Catalogue & Stock (produits) — UI 🟨 (seul écran existant, à refondre), API 🟨
-- **CRUD :** C ✅ · R 🟨 (pas de pagination, N+1, pas de recherche serveur) · U 🟨 (partiel : catégorie/unité/code-barres ignorés) · D 🟨 (DELETE dur non confirmé, casse l'historique → **archivage** obligatoire).
-- **Fonctionnalités clés :** recherche nom/code-barres/catégorie **réelle** (corrige FRN-03) ; filtres (catégorie, dépôt, statut) ; fiche produit : prix achat/vente, marge, seuil d'alerte, **stock par dépôt** (nouveau modèle DAT-02) ; onglets Variantes / Lots (FEFO) / **Journal des mouvements du produit** ; import/export Excel/CSV ; export PDF ; impression étiquettes (service local) ; **archiver/restaurer** ; images produit (option).
-- **Règles métier :** code-barres unique par tenant ; prix ≥ 0 ; suppression remplacée par `archived_at` ; unicité SKU variante ; Σ variantes = stock produit recalculé serveur (DAT-03).
-- **Endpoints (cible) :** `GET /api/products?search=&categoryId=&depotId=&page=` · `GET /api/products/:id` · `POST` · `PATCH /:id` · `POST /:id/archive` · `GET /api/products/barcode/:code` (scan POS)· `POST /:id/variants` · `PATCH/DELETE /variants/:vid` · `POST /:id/batches` · `PATCH/DELETE /batches/:bid` · `POST /api/products/import` · `GET /api/products/export`.
+`GET /api/reports/dashboard` : CA jour/semaine/mois, nb ventes, panier moyen, alertes stock bas cliquables, **lots proches péremption (30 j)**, série 14 j (graphique SVG), top produits, top vendeurs ; fuseau tenant côté calcul.
 
-### 2.3 Catégories — ❌ (aucune API)
-- **CRUD complet :** liste (avec nb produits), créer, renommer, supprimer **bloquée si utilisée** ; ordre d'affichage.
-- **Endpoints :** `GET/POST /api/categories`, `PATCH/DELETE /:id`.
+### 2.2 Catalogue & Stock (produits) — ✅
 
-### 2.4 Unités & conversions — UI ❌ (lien mort dans Stock.tsx), API 🟨
-- **CRUD :** C ✅ · R ✅ · U ❌ (ajouter `PATCH`) · D ✅ (garde « utilisée » ok, à généraliser).
-- **Fonctionnalités clés :** unité de base + dérivées (Carton ×12) ; **la caisse vend en unité dérivée et déduit `base_value × qté`** (corrige DAT-04) ; unicité `(tenant, name)`.
-- **Règles métier :** une seule unité `is_base` par « famille » de produit ; interdire la suppression/modif de `base_value` si des ventes existent (ou historiser le facteur).
+- CRUD : C ✅ (variantes + stock initial tracé) · R ✅ (pagination, recherche serveur nom/code-barres/catégorie, pas de N+1) · U ✅ (PATCH complet) · D = **archivage/restauration** (`archived_at`, historique conservé).
+- Fiche : prix achat/vente + marge, seuil, **stock par dépôt**, onglets Variantes / **Lots FEFO** / Journal des mouvements (20 derniers).
+- **Import CSV** (`POST /api/products/import`, ≤ 500 lignes, upsert code-barres/nom, audit IMPORT) + **export CSV** ; **étiquettes Code 39 A4** imprimables (produit ou variante).
+- Règles : code-barres unique/tenant (index partiel), prix ≥ 0, SKU variante unique/produit, Σ variantes = stock recalculé serveur.
 
-### 2.5 Dépôts — ❌ (aucune API, table seule)
-- **CRUD complet** (ADMIN) : nom, adresse, téléphone, responsable (`owner_id`), actif/inactif.
-- **Fonctionnalités clés :** vue stock par dépôt ; **transfert inter-dépôts** (mouvement `TRANSFER` : OUT dépôt A / IN dépôt B en une transaction, à double validation) ; affectation des vendeurs ; limite `max_depots` de la licence contrôlée à la création.
-- **Endpoints :** `GET/POST /api/depots`, `PATCH /:id`, `POST /:id/deactivate`, `POST /api/stock/transfer`.
+### 2.3 Catégories — ✅
 
-### 2.6 Fournisseurs — API 🟨 (GET/POST seuls), UI ❌
-- **CRUD complet :** ajouter `PATCH /:id`, `DELETE /:id` (ou archivage si réceptions liées).
-- **Fonctionnalités clés :** fiche (contacts, adresse) ; historique des réceptions/commandes du fournisseur ; association aux **lots** (`stock_batches.supplier_id`).
-- **Endpoints cible :** `GET/POST /api/suppliers`, `GET /:id` (avec stats), `PATCH`, `DELETE`.
+`GET/POST /api/categories`, `PATCH/DELETE /:id` — liste avec nb produits, suppression bloquée si utilisée (`409 CATEGORY_IN_USE`), ordre d'affichage (`sort_order`).
 
-### 2.7 Entrées de stock / Réceptions fournisseurs — ❌
-- **Besoin :** écran « Réception » : choisir fournisseur, produits, quantités, **n° de lot + date d'expiration**, prix d'achat ; génère mouvements `IN`, met à jour lots et `stock_levels`, et optionnellement le prix d'achat catalogue.
-- **Règles métier :** transaction atomique ; réception possible sur variante ; impression du bon de réception ; le coût d'achat alimente le calcul de marge.
-- **Endpoints :** `POST /api/stock/receipts`, `GET /api/stock/receipts` (+ détail).
+### 2.4 Unités & conversions — ✅
 
-### 2.8 Ajustements & Inventaire physique — UI 🟨, API 🟨
-- **Fonctionnalités clés :** ajustement avec **motif obligatoire** (`ADJUSTMENT`, `DAMAGE`, `EXPIRED`) ciblant produit/variante **et dépôt** ; mode « inventaire » : feuille de comptage (export → saisie compté → écarts) ; chaque écart = 1 mouvement tracé + entrée `audit_logs`.
-- **Règles métier :** réservé ADMIN (ou vendeur avec approbation) — corrige SEC-05 ; ne jamais écraser le stock variante avec la quantité produit (corrige BCK-05).
+CRUD complet (dont `PATCH`, `409 UNIT_IN_USE`) ; **la caisse vend en unité dérivée et le serveur convertit `base_value × qté`** (tests dédiés) ; une seule unité `is_base` par tenant, unicité `(tenant, name)`.
 
-### 2.9 Journal des mouvements — ❌ UI, API 🟨
-- **Fonctionnalités clés :** liste paginée + **filtres** (type, produit, dépôt, utilisateur, période) ; export CSV ; entrée `reference_id` cliquable (→ vente ou transfert).
-- **Endpoint cible :** `GET /api/stock/movements?type=&productId=&depotId=&userId=&from=&to=&cursor=` (remplacer le LIMIT 100 dur).
+### 2.5 Dépôts — ✅
 
-### 2.10 Ventes (historique & détail) — UI ❌, API 🟨
-- **CRUD :** R liste 🟨 (LIMIT 50 dur, zéro filtre) · **R détail ❌** · annulation/avoir ❌ · retour ❌.
-- **Fonctionnalités clés :** filtres période/dépôt/vendeur/paiement ; détail vente (lignes, unité de vente, variante, vendeur, reçu ré-imprimable/exportable PDF) ; **annulation** = vente d'avoir liée (mouvement `RETURN`, restock via lots d'origine si pertinent), traçabilité totale ; distinction vente synchronisée offline (badge).
-- **Endpoints :** `GET /api/sales?from=&to=&depotId=&vendorId=&method=&page=` · `GET /api/sales/:id` · `POST /api/sales/:id/void` · `POST /api/sales/:id/returns`.
+CRUD complet (`GET/POST /api/depots`, `PATCH /:id` avec activation) ; vue **stock par dépôt** (`GET /:id/stock`) ; **transferts inter-dépôts à double validation** (`POST /api/stock/transfers` → `POST /:id/receive`, annulation avec réintégration) ; `max_depots` licence appliqué à la création (403 `LICENSE_DEPOT_LIMIT`).
 
-### 2.11 Équipe / Vendeurs — UI ❌, API 🟨 (GET/POST seuls)
-- **CRUD complet :** `PATCH /:id` (nom, dépôt, actif), réinitialisation mot de passe + PIN (ADMIN), désactivation (jamais de DELETE si ventes liées).
-- **Fonctionnalités clés :** affectation dépôt ; remise à zéro PIN ; performance du vendeur (ventes, panier moyen) ; **jamais** de `pin_code` dans les réponses (corrige SEC-10) ; respect `max_users` licence.
-- **Endpoints :** `GET/POST /api/vendors`, `PATCH /:id`, `POST /:id/reset-password`, `POST /:id/reset-pin`, `POST /:id/deactivate`.
+### 2.6 Fournisseurs — ✅
 
-### 2.12 Rapports — UI ❌, API 🟨
-- **Fonctionnalités clés :** rapports par période/dépôt : ventes (brut, par vendeur, par produit, par paiement), **marges** (CA − coûts d'achat), stock valorisé, péremptions à venir, **prédictif corrigé** (fenêtre 30 j — BCK-02) ; exports Excel/PDF ; envoi programmé (lié à § notifications).
-- **Endpoints :** `GET /api/reports/sales`, `/margin`, `/stock-valuation`, `/expiry`, `/predictive` (corrigé) — tous avec `from,to,depotId,format(csv|pdf)`.
+CRUD complet (`GET/POST/PATCH/DELETE`) ; fiche avec **historique des réceptions** ; association aux lots (`stock_batches.supplier_id`) — suppression tolérante (réceptions conservées, `SET NULL`).
 
-### 2.13 Centre de notifications — ❌
-- **Fonctionnalités clés :** historique des envois (table `notifications` alimentée à chaque tentative : statut SENT/FAILED + réponse provider) ; configuration destinataires (téléphone gérant par tenant !) ; canaux SMS/WhatsApp/in-app ; seuils et horaires configurables par tenant.
-- **Endpoints :** `GET /api/notifications`, `GET/PUT /api/notification-settings`.
-- **Prérequis :** réparer BCK-01 (table `system_configs` sans tenant ni par-tenant config).
+### 2.7 Entrées de stock / Réceptions fournisseurs — ✅
 
-### 2.14 Paramètres tenant — ❌
-- **Fonctionnalités clés :** profil entreprise (nom, logo, couleur → **thème appliqué à toute l'UI** : white-label CDC), devise/langue, fuseau, numéro d'alerte, préférences ticket de caisse (en-tête/pied), gestion de l'**abonnement** (plan, échéance, renouvellement/paiement).
-- **Endpoints :** `GET/PATCH /api/tenants/current`, `POST /api/tenants/current/logo`, `GET /api/licenses/current`.
+Écran Réception : fournisseur, lignes produit/variante, quantités **multi-unités converties serveur**, n° lot + péremption, coût d'achat → mouvements `IN` + lots + `stock_levels` **atomiques** ; liste paginée + détail (lots créés). Le coût alimente les **marges**.
 
-### 2.15 Journal d'audit — ❌ (table seule, rien n'écrit)
-- **Besoin :** middleware `audit()` branché sur toutes les mutations sensibles (produits, stocks, ventes/annulations, utilisateurs, configs) avec `previous_state`/`new_state` ; écran read-only filtré (entité, utilisateur, période, dépôt) ; export.
-- **Endpoint :** `GET /api/audit-logs?entity=&userId=&from=&to=` — corrige DAT-06.
+### 2.8 Ajustements & Inventaire physique — ✅
+
+`POST /api/stock/adjust` : comptage cible + **motif obligatoire** → mouvement `ADJUSTMENT` signé + audit ; écran inventaire guidé (liste à compter par dépôt, écarts appliqués en rafale) ; réservé ADMIN.
+
+### 2.9 Journal des mouvements — ✅
+
+`GET /api/stock/movements` : **pagination par curseur**, filtres type/produit/dépôt/période ; types couverts `IN/OUT/TRANSFER/ADJUSTMENT/SALE/RETURN/DAMAGE/EXPIRED/VOID`.
+
+### 2.10 Ventes (historique & détail) — ✅
+
+Liste paginée + filtres période/dépôt/vendeur/paiement/statut ; **détail** (lignes avec unité/variante, retours) ; **annulation** `POST /:id/void` (statut VOIDED, restock `VOID`, motif tracé) ; **retours partiels** `POST /:id/returns` (restock `RETURN`) ; reçu ré-imprimable + **lien WhatsApp** ; badge ventes re-synchronisées offline.
+
+### 2.11 Équipe / Vendeurs — ✅
+
+CRUD : liste, création (rôle/dépôt/PIN haché), `PATCH /:id`, `reset-password` (sessions révoquées), `reset-pin`, `deactivate`/`activate` — jamais de suppression si ventes liées ; `max_users` licence appliqué ; jamais de PIN dans les réponses ; performance vendeur via rapport ventes.
+
+### 2.12 Rapports — ✅
+
+`GET /api/reports/sales|margin|stock-valuation|expiry|predictive` (période/dépôt, **`format=csv`**) : ventes par dépôt/vendeur/paiement + série, **marges** (mise à jour du coût d'achat courant), valorisation, péremptions FEFO, **prédictif** (vélocité 30 j corrigée) ; envoi programmé du rapport quotidien (notifications §2.13).
+
+### 2.13 Centre de notifications — ✅
+
+Cloche Shell + page historique paginée (statuts SENT/FAILED/READ, marquer lu/tout lire) ; paramètres destinataires SMS/WhatsApp **par tenant** (`notification_settings`), seuils et heure du rapport quotidien ; bouton **test d'envoi** ; drivers Africa's Talking + WhatsApp Cloud (mock en dev/test).
+
+### 2.14 Paramètres tenant — ✅
+
+Profil entreprise (nom, téléphone, logo **data-URL**, couleur → thème white-label), fuseau/devise, page **Abonnement** (plan, échéance, usage vs plafonds, grille tarifaire), compte propre (mot de passe + PIN).
+
+### 2.15 Journal d'audit — ✅
+
+Helper `writeAudit` sur **toutes** les mutations sensibles (catalogue, stock, ventes/void/retours, utilisateurs, configs, licences, impersonation, imports, migration) avec `previous_state`/`new_state` ; écran read-only filtré (entité/action/utilisateur/période) paginé.
 
 ---
 
 ## 3. Espace VENDEUR (caisse mobile-first)
 
-### 3.1 Caisse / POS — ❌ (l'écran **cœur de métier**, totalement absent)
-- **Fonctionnalités clés :** recherche/scan code-barres (caméra + douchette USB), grille de favoris ; panier avec quantité **en unité ou dérivée** (pièce/carton → conversion auto), variante au besoin, remise ligne (droits), total en FCFA ; paiements **CASH / MTN_MOMO / ORANGE_MONEY** (référence transaction opérateur) ; **mode hors-ligne complet** : vente mise en file (`client_sale_id` UUID), rejeu automatique au retour réseau (idempotent côté serveur — corrige SEC-07) ; reçu thermique 80 mm (impression + partage WhatsApp du ticket) ; verrou caisse par **PIN** ; synchronisation du catalogue au démarrage (delta).
-- **Règles métier :** prix et total **recalculés serveur** (corrige SEC-06) ; déduction FEFO automatique ; blocage stock insuffisant avec message clair ; une vente offline ne peut pas être rejouée en double.
-- **Endpoints :** `GET /api/pos/bootstrap` (catalogue compact + prix + stocks du dépôt du vendeur) · `POST /api/sales` (idempotent, serveur-authoritatif) · `GET /api/sales/:id/receipt`.
+### 3.1 Caisse / POS — ✅ (l'écran cœur de métier)
 
-### 3.2 Mes ventes — ❌
-- Liste des ventes **du vendeur connecté** (jour/semaine), total espèces vs mobile, détail + ré-impression, demande d'annulation (soumise à ADMIN).
-- **Endpoint :** `GET /api/sales/my?from=&to=` (filtrage forcé `vendorId=req.user.id`).
+- Recherche + **douchette USB** (saisie Entrée) + **scan caméra** (`BarcodeDetector` natif, amélioration progressive documentée) ; favoris, filtres catégorie.
+- Panier : quantité **en unité ou dérivée** (conversion auto serveur), variante, remise ligne, total FCFA ; paiements **CASH (monnaie à rendre) / MTN_MOMO / ORANGE_MONEY** (référence opérateur).
+- **Hors-ligne complet** : catalogue bootstrap mis en cache IndexedDB, vente en file (`client_sale_id`), **rejeu automatique** au retour réseau avec `duplicate:true` (aucun doublon), file consultable/purgeable.
+- Reçu 80 mm imprimé + **partage WhatsApp** (wa.me) ; verrou PIN (connexion par PIN) ; prix/total **recalculés serveur** ; FEFO automatique ; rupture → blocage message clair.
 
-### 3.3 Consultation stock (lecture seule) — ❌
-- Disponibilité d'un produit **dans son dépôt** (pas de modification possible — corrige SEC-05).
+### 3.2 Mes ventes — ✅
 
-### 3.4 Clôture de journée (Z de caisse) — ❌
-- Récap journalier du vendeur/dépôt (ventes, paiements, file offline restante), exportable/imprimable, transmis au gérant (notification 20 h — le TODO vide de `SchedulerService`).
+`/caisse/mes-ventes` : `GET /api/sales?mine=1` — **filtre forcé** `vendorId = utilisateur connecté` côté API (impossible de voir autrui), totals espèces/mobile, détail + ré-impression ; l'**annulation est effectuée par l'ADMIN** (`POST /:id/void`) — contrôle plus strict que le circuit de demande.
+
+### 3.3 Consultation stock (lecture seule) — ✅
+
+`/caisse/stock` : disponibilités de son dépôt en lecture seule (aucune écriture vendeur).
+
+### 3.4 Clôture de journée (Z de caisse) — ✅
+
+`GET /api/reports/z-report?date=&depotId=` : CA, nb ventes, ventilation par paiement, annulations ; écran imprimable + envoi automatique 20 h (scheduler).
 
 ---
 
 ## 4. Espace SUPER_ADMIN (console SaaS)
 
-### 4.1 Dashboard global — ❌ UI, API ✅🟨
-- `GET /api/reports/superadmin/stats` existe : compléter avec MRR/abonnements actifs, essais en cours/échéances, taux d'échec de notifications, croissance (nouveaux tenants/mois).
+### 4.1 Dashboard global — ✅
 
-### 4.2 Tenants — UI ❌, API 🟨 (liste + toggle)
-- **CRUD cible :** créer (onboarding manuel), détail complet (gérant, dépôts, nb utilisateurs, volume ventes), éditer, **suspendre/réactiver** (existe), réinitialiser le mot de passe du gérant, impersonation journalisée (support).
-- **Endpoints :** `GET /api/tenants/:id` · `POST /api/tenants` · `PATCH /:id` · `POST /:id/impersonate`.
+`GET /api/reports/superadmin/stats` : tenants (total/actifs/utilisateurs), CA plateforme (mois + cumul), **MRR**, essais expirant ≤ 7 j, **échecs de notifications 24 h**, nouveaux tenants 30 j, top tenants par CA.
 
-### 4.3 Licences & plans — ❌ (table seule)
-- **Fonctionnalités clés :** plans (TRIAL/BASIC/PRO : `max_users`, `max_depots`, prix) ; attribution/renouvellement/licence expirée → **middleware `requireActiveLicense`** qui bloque l'API tenant (sauf consultation) : corrige DAT-06 ; journal des paiements (MOMO/OM ou manuel).
-- **Endpoints :** `GET/POST/PATCH /api/licenses`, `GET /api/licenses/plans`, `POST /api/licenses/:id/renew`.
+### 4.2 Tenants — ✅
 
-### 4.4 Configurations système — UI ❌, API 🟨
-- **Corriger SEC-04** (masquer réellement les secrets) ; rendre les clés **par tenant** ou clairement globales (`system_configs` + table `tenant_configs`) ; tester la connectivité (bouton « Tester WhatsApp/SMS »).
+Liste + recherche + filtre statut ; création (provisionnement gérant + licence) ; **détail complet** (gérant, dépôts, usage, ventes 30 j) ; édition ; **suspendre/réactiver** ; **reset mot de passe gérant** ; **impersonation journalisée** (audit IMPERSONATE + bandeau dans l'app).
 
-### 4.5 Supervision notifications — ❌
-- Vue globale des envois (tous tenants), files d'échec avec relance, santé des providers (quota, dernières erreurs).
+### 4.3 Licences & plans — ✅
+
+Plans CRUD (`max_users`, `max_depots`, prix) ; licences liste (filtre statut, tri échéance), attribution, **renouvellement** (`POST /:id/renew`) ; middleware **`requireActiveLicense`** bloquant l'API (423, grâce `LICENSE_GRACE_DAYS=3 j`) — règlement MoMo/OM géré hors plateforme (modèle de facturation v2).
+
+### 4.4 Configurations système — ✅
+
+`system_configs` (**secrets masqués** en lecture, `is_secret`) + `tenant_configs` ; édition avec audit CONFIG ; **test de connectivité** SMS/WhatsApp (`POST /api/notifications/test`).
+
+### 4.5 Supervision notifications — ✅
+
+`GET /api/notifications/supervision` : envois tous tenants, filtres statut/canal, réponses providers ; compteur d'échecs 24 h remonté au dashboard SA ; `GET /api/audit-logs/supervision`.
 
 ---
 
-## 5. Couverture API — synthèse par ressource
+## 5. Couverture API — synthèse par ressource (état v2.0)
 
-| Ressource | C | R (liste) | R (détail) | U | D | Endpoints spéciaux | Statut actuel |
-|---|:-:|:-:|:-:|:-:|:-:|---|---|
-| Auth / session | ✅ | – | ❌ (me) | ❌ (pwd) | ✅ logout | refresh-rotation ❌ · pin ❌ · forgot ❌ | 🟨 |
-| Tenant | ❌ | ✅ (SA) | ❌ | ❌ | – | current/profile ❌ · impersonate ❌ | 🟨 |
-| Licence / plan | ❌ | ❌ | ❌ | ❌ | – | renew ❌ · middleware licence ❌ | ❌ (table seule) |
-| Utilisateur / vendeur | ✅ | ✅ | ❌ | ❌ | ❌ | reset pwd/pin ❌ · deactivate ❌ | 🟨 |
-| Dépôt | ❌ | ❌ | ❌ | ❌ | ❌ | transfer ❌ · stock par dépôt ❌ | ❌ |
-| Catégorie | ❌ | ❌ | – | ❌ | ❌ | – | ❌ |
-| Unité | ✅ | ✅ | – | ❌ | ✅ | conversion en vente ❌ | 🟨 |
-| Produit | ✅ | 🟨 (N+1, pas de pagination) | ❌ | 🟨 (partiel) | 🟨 (dur) | barcode ❌ · archive ❌ · import/export ❌ | 🟨 |
-| Variante | 🟨 (créée avec produit) | 🟨 | ❌ | ❌ | ❌ | SKU unique ❌ | 🟨 |
-| Lot / batch | 🟨 (créé avec produit) | 🟨 | ❌ | ❌ | ❌ | réception ❌ · fournisseur lié ❌ | 🟨 |
-| Fournisseur | ✅ | ✅ | ❌ | ❌ | ❌ | historique réceptions ❌ | 🟨 |
-| Réception stock | ❌ | ❌ | ❌ | – | ❌ | bon de réception ❌ | ❌ |
-| Vente | 🟨 (non idempotent, total client) | 🟨 (LIMIT 50, 0 filtre) | ❌ | – | ❌ (void) | reçu ❌ · retour ❌ · offline-idempotent ❌ | 🟨 |
-| Mouvement stock | 🟨 (ADJUSTMENT seul) | 🟨 (LIMIT 100, 0 filtre) | – | – | – | TRANSFER/IN/RETURN/DAMAGE ❌ | 🟨 |
-| Notification | – | ❌ | – | ❌ (settings) | – | settings destinataire ❌ | ❌ (service cassé) |
-| Config système | ✅ | 🟨 (fuite secrets) | – | ✅ | – | test provider ❌ | 🟨 |
-| Audit log | ❌ (rien n'écrit) | ❌ | – | – | – | export ❌ | ❌ (table seule) |
-| Rapports | – | 🟨 (dashboard, prédictif faux, SA) | – | – | – | marges ❌ · exports ❌ · Z caisse ❌ | 🟨 |
+| Ressource             |                 C                  |         R (liste)         |    R (détail)     |        U        |         D          | Endpoints spéciaux                       | Statut |
+| --------------------- | :--------------------------------: | :-----------------------: | :---------------: | :-------------: | :----------------: | ---------------------------------------- | ------ |
+| Auth / session        |                 ✅                 |             –             |      ✅ (me)      | ✅ (change-pwd) |     ✅ logout      | refresh **rotatif** · pin · forgot/reset | ✅     |
+| Tenant                |              ✅ (SA)               |          ✅ (SA)          |        ✅         |       ✅        |     suspendre      | current · impersonate (audit)            | ✅     |
+| Licence / plan        |                 ✅                 |            ✅             |        ✅         |       ✅        |         –          | renew · **middleware licence**           | ✅     |
+| Utilisateur / vendeur |                 ✅                 |            ✅             |        ✅         |       ✅        | ✅ (désactivation) | reset pwd/pin                            | ✅     |
+| Dépôt                 |                 ✅                 |            ✅             |    ✅ + stock     |       ✅        | ✅ (désactivation) | **transferts double validation**         | ✅     |
+| Catégorie             |                 ✅                 |     ✅ (+nb produits)     |         –         |       ✅        |     ✅ (garde)     | –                                        | ✅     |
+| Unité                 |                 ✅                 |            ✅             |         –         |       ✅        |     ✅ (garde)     | **conversion serveur en vente**          | ✅     |
+| Produit               |                 ✅                 |  ✅ (paginé, recherche)   |        ✅         |       ✅        |   ✅ (archivage)   | barcode · **import/export CSV**          | ✅     |
+| Variante              |                 ✅                 |            ✅             |        ✅         |       ✅        |  ✅ (garde usage)  | SKU unique                               | ✅     |
+| Lot / batch           |                 ✅                 |         ✅ (FEFO)         |        ✅         |       ✅        |   ✅ (si épuisé)   | réception liée · fournisseur             | ✅     |
+| Fournisseur           |                 ✅                 |            ✅             | ✅ (+ réceptions) |       ✅        |         ✅         | –                                        | ✅     |
+| Réception stock       |                 ✅                 |            ✅             |        ✅         |        –        |         –          | lots auto + coûts                        | ✅     |
+| Vente                 | ✅ (**idempotente**, prix serveur) |       ✅ (filtres)        |        ✅         |        –        |      ✅ void       | reçu · **retours** · offline-idempotent  | ✅     |
+| Mouvement stock       |                 ✅                 | ✅ (**curseur**, filtres) |         –         |        –        |         –          | 9 types couverts                         | ✅     |
+| Notification          |           ✅ (scheduler)           |            ✅             |        ✅         |  ✅ (settings)  |         –          | test d'envoi · dedupe exactly-once       | ✅     |
+| Config système        |                 ✅                 |   ✅ (secrets masqués)    |         –         |       ✅        |         –          | global + par-tenant                      | ✅     |
+| Audit log             |      ✅ (mutations sensibles)      |            ✅             |         –         |        –        |         –          | exportable · supervision SA              | ✅     |
+| Rapports              |                 –                  |      ✅ (6 + Z + SA)      |         –         |        –        |         –          | marges · **exports CSV** · Z caisse      | ✅     |
 
-**Écrans existants / prévus : 1 / 25.** Cette matrice sert de checklist de couverture : le CDC ne sera considéré comme respecté que lorsque chaque ligne UI et chaque ligne API ci-dessus sera ✅ avec tests.
+**Écrans livrés : 29 / 25 prévus** (public 4 · admin 19 · vendeur 5 · console SA 7, certaines entrées de la matrice étant couvertes par des écrans enrichis). Chaque ligne est couverte par des tests (81 API / 55 web) et documentée dans `docs/04_API.md` + `GET /api/openapi.json`.

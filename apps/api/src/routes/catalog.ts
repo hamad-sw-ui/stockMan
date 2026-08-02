@@ -1,12 +1,16 @@
-import { Router } from 'express';
-import { z } from 'zod';
-import { query } from '../config/db';
-import { h } from '../lib/asyncHandler';
-import { HttpError } from '../lib/errors';
-import { writeAudit } from '../lib/audit';
-import { authenticate, AuthRequest, requireRole } from '../middleware/auth';
-import { requireActiveLicense } from '../middleware/license';
-import { validateBody, validateParams, uuidParam } from '../middleware/validate';
+import { Router } from "express";
+import { z } from "zod";
+import { query } from "../config/db";
+import { h } from "../lib/asyncHandler";
+import { HttpError } from "../lib/errors";
+import { writeAudit } from "../lib/audit";
+import { authenticate, AuthRequest, requireRole } from "../middleware/auth";
+import { requireActiveLicense } from "../middleware/license";
+import {
+  validateBody,
+  validateParams,
+  uuidParam,
+} from "../middleware/validate";
 
 /**
  * Référentiels simples : catégories, unités, dépôts, fournisseurs.
@@ -15,11 +19,11 @@ import { validateBody, validateParams, uuidParam } from '../middleware/validate'
 const router = Router();
 router.use(authenticate);
 
-const adminWrite = [requireRole('ADMIN'), requireActiveLicense()];
+const adminWrite = [requireRole("ADMIN"), requireActiveLicense()];
 
 // ============================ CATÉGORIES ====================================
 router.get(
-  '/categories',
+  "/categories",
   h(async (req, res) => {
     const t = (req as AuthRequest).user.tenantId;
     const r = await query(
@@ -41,60 +45,110 @@ const categorySchema = z.object({
 });
 
 router.post(
-  '/categories',
+  "/categories",
   ...adminWrite,
   validateBody(categorySchema),
   h(async (req, res) => {
     const u = (req as AuthRequest).user;
     const r = await query(
-      'INSERT INTO categories (tenant_id, name, description, sort_order) VALUES ($1,$2,$3,$4) RETURNING *',
-      [u.tenantId, req.body.name, req.body.description ?? null, req.body.sortOrder],
+      "INSERT INTO categories (tenant_id, name, description, sort_order) VALUES ($1,$2,$3,$4) RETURNING *",
+      [
+        u.tenantId,
+        req.body.name,
+        req.body.description ?? null,
+        req.body.sortOrder,
+      ],
     );
-    await writeAudit({ tenantId: u.tenantId, userId: u.id, userName: u.name, action: 'CREATE', entity: 'category', entityId: r.rows[0]?.id ?? null, newState: r.rows[0] });
+    await writeAudit({
+      tenantId: u.tenantId,
+      userId: u.id,
+      userName: u.name,
+      action: "CREATE",
+      entity: "category",
+      entityId: r.rows[0]?.id ?? null,
+      newState: r.rows[0],
+    });
     res.status(201).json(r.rows[0]);
   }),
 );
 
 router.patch(
-  '/categories/:id',
+  "/categories/:id",
   ...adminWrite,
   validateParams(uuidParam),
   validateBody(categorySchema.partial()),
   h(async (req, res) => {
     const u = (req as AuthRequest).user;
-    const prev = await query('SELECT * FROM categories WHERE id=$1 AND tenant_id=$2', [req.params.id!, u.tenantId]);
-    if (!prev.rows[0]) throw HttpError.notFound('Catégorie introuvable.');
-    const r = await query(
-      'UPDATE categories SET name=COALESCE($3,name), description=COALESCE($4,description), sort_order=COALESCE($5,sort_order) WHERE id=$1 AND tenant_id=$2 RETURNING *',
-      [req.params.id!, u.tenantId, req.body.name ?? null, req.body.description ?? null, req.body.sortOrder ?? null],
+    const prev = await query(
+      "SELECT * FROM categories WHERE id=$1 AND tenant_id=$2",
+      [req.params.id!, u.tenantId],
     );
-    await writeAudit({ tenantId: u.tenantId, userId: u.id, userName: u.name, action: 'UPDATE', entity: 'category', entityId: req.params.id!, previousState: prev.rows[0], newState: r.rows[0] });
+    if (!prev.rows[0]) throw HttpError.notFound("Catégorie introuvable.");
+    const r = await query(
+      "UPDATE categories SET name=COALESCE($3,name), description=COALESCE($4,description), sort_order=COALESCE($5,sort_order) WHERE id=$1 AND tenant_id=$2 RETURNING *",
+      [
+        req.params.id!,
+        u.tenantId,
+        req.body.name ?? null,
+        req.body.description ?? null,
+        req.body.sortOrder ?? null,
+      ],
+    );
+    await writeAudit({
+      tenantId: u.tenantId,
+      userId: u.id,
+      userName: u.name,
+      action: "UPDATE",
+      entity: "category",
+      entityId: req.params.id!,
+      previousState: prev.rows[0],
+      newState: r.rows[0],
+    });
     res.json(r.rows[0]);
   }),
 );
 
 router.delete(
-  '/categories/:id',
+  "/categories/:id",
   ...adminWrite,
   validateParams(uuidParam),
   h(async (req, res) => {
     const u = (req as AuthRequest).user;
-    const used = await query('SELECT 1 FROM products WHERE category_id=$1 LIMIT 1', [req.params.id]);
-    if (used.rows[0]) throw HttpError.conflict('CATEGORY_IN_USE', 'Catégorie utilisée par des produits : suppression impossible.');
-    const r = await query('DELETE FROM categories WHERE id=$1 AND tenant_id=$2 RETURNING id, name', [req.params.id!, u.tenantId]);
-    if (!r.rows[0]) throw HttpError.notFound('Catégorie introuvable.');
-    await writeAudit({ tenantId: u.tenantId, userId: u.id, userName: u.name, action: 'DELETE', entity: 'category', entityId: req.params.id!, previousState: r.rows[0] });
-    res.json({ message: 'Catégorie supprimée.' });
+    const used = await query(
+      "SELECT 1 FROM products WHERE category_id=$1 LIMIT 1",
+      [req.params.id],
+    );
+    if (used.rows[0])
+      throw HttpError.conflict(
+        "CATEGORY_IN_USE",
+        "Catégorie utilisée par des produits : suppression impossible.",
+      );
+    const r = await query(
+      "DELETE FROM categories WHERE id=$1 AND tenant_id=$2 RETURNING id, name",
+      [req.params.id!, u.tenantId],
+    );
+    if (!r.rows[0]) throw HttpError.notFound("Catégorie introuvable.");
+    await writeAudit({
+      tenantId: u.tenantId,
+      userId: u.id,
+      userName: u.name,
+      action: "DELETE",
+      entity: "category",
+      entityId: req.params.id!,
+      previousState: r.rows[0],
+    });
+    res.json({ message: "Catégorie supprimée." });
   }),
 );
 
 // ============================ UNITÉS ========================================
 router.get(
-  '/units',
+  "/units",
   h(async (req, res) => {
-    const r = await query('SELECT * FROM units WHERE tenant_id=$1 ORDER BY is_base DESC, name', [
-      (req as AuthRequest).user.tenantId,
-    ]);
+    const r = await query(
+      "SELECT * FROM units WHERE tenant_id=$1 ORDER BY is_base DESC, name",
+      [(req as AuthRequest).user.tenantId],
+    );
     res.json(r.rows);
   }),
 );
@@ -102,63 +156,107 @@ router.get(
 const unitSchema = z.object({
   name: z.string().trim().min(1).max(100),
   symbol: z.string().trim().min(1).max(20),
-  baseValue: z.coerce.number().positive('Facteur de conversion invalide').max(1_000_000),
+  baseValue: z.coerce
+    .number()
+    .positive("Facteur de conversion invalide")
+    .max(1_000_000),
   isBase: z.boolean().default(false),
 });
 
 router.post(
-  '/units',
+  "/units",
   ...adminWrite,
   validateBody(unitSchema),
   h(async (req, res) => {
     const u = (req as AuthRequest).user;
     const r = await query(
-      'INSERT INTO units (tenant_id, name, symbol, base_value, is_base) VALUES ($1,$2,$3,$4,$5) RETURNING *',
-      [u.tenantId, req.body.name, req.body.symbol, req.body.baseValue, req.body.isBase],
+      "INSERT INTO units (tenant_id, name, symbol, base_value, is_base) VALUES ($1,$2,$3,$4,$5) RETURNING *",
+      [
+        u.tenantId,
+        req.body.name,
+        req.body.symbol,
+        req.body.baseValue,
+        req.body.isBase,
+      ],
     );
-    await writeAudit({ tenantId: u.tenantId, userId: u.id, userName: u.name, action: 'CREATE', entity: 'unit', entityId: r.rows[0]?.id ?? null, newState: r.rows[0] });
+    await writeAudit({
+      tenantId: u.tenantId,
+      userId: u.id,
+      userName: u.name,
+      action: "CREATE",
+      entity: "unit",
+      entityId: r.rows[0]?.id ?? null,
+      newState: r.rows[0],
+    });
     res.status(201).json(r.rows[0]);
   }),
 );
 
 router.patch(
-  '/units/:id',
+  "/units/:id",
   ...adminWrite,
   validateParams(uuidParam),
   validateBody(unitSchema.partial()),
   h(async (req, res) => {
     const u = (req as AuthRequest).user;
-    const found = await query('SELECT * FROM units WHERE id=$1 AND tenant_id=$2', [req.params.id!, u.tenantId]);
-    if (!found.rows[0]) throw HttpError.notFound('Unité introuvable.');
+    const found = await query(
+      "SELECT * FROM units WHERE id=$1 AND tenant_id=$2",
+      [req.params.id!, u.tenantId],
+    );
+    if (!found.rows[0]) throw HttpError.notFound("Unité introuvable.");
     if (req.body.baseValue !== undefined) {
-      const used = await query('SELECT 1 FROM sale_items WHERE unit_id=$1 LIMIT 1', [req.params.id]);
-      if (used.rows[0]) throw HttpError.conflict('UNIT_FROZEN', 'Cette unité a servi des ventes : son facteur de conversion ne peut plus changer.');
+      const used = await query(
+        "SELECT 1 FROM sale_items WHERE unit_id=$1 LIMIT 1",
+        [req.params.id],
+      );
+      if (used.rows[0])
+        throw HttpError.conflict(
+          "UNIT_FROZEN",
+          "Cette unité a servi des ventes : son facteur de conversion ne peut plus changer.",
+        );
     }
     const r = await query(
-      'UPDATE units SET name=COALESCE($3,name), symbol=COALESCE($4,symbol), base_value=COALESCE($5,base_value), is_base=COALESCE($6,is_base) WHERE id=$1 AND tenant_id=$2 RETURNING *',
-      [req.params.id!, u.tenantId, req.body.name ?? null, req.body.symbol ?? null, req.body.baseValue ?? null, req.body.isBase ?? null],
+      "UPDATE units SET name=COALESCE($3,name), symbol=COALESCE($4,symbol), base_value=COALESCE($5,base_value), is_base=COALESCE($6,is_base) WHERE id=$1 AND tenant_id=$2 RETURNING *",
+      [
+        req.params.id!,
+        u.tenantId,
+        req.body.name ?? null,
+        req.body.symbol ?? null,
+        req.body.baseValue ?? null,
+        req.body.isBase ?? null,
+      ],
     );
     res.json(r.rows[0]);
   }),
 );
 
 router.delete(
-  '/units/:id',
+  "/units/:id",
   ...adminWrite,
   validateParams(uuidParam),
   h(async (req, res) => {
     const u = (req as AuthRequest).user;
-    const used = await query('SELECT 1 FROM products WHERE unit_id=$1 LIMIT 1', [req.params.id]);
-    if (used.rows[0]) throw HttpError.conflict('UNIT_IN_USE', 'Unité utilisée par des produits : suppression impossible.');
-    const r = await query('DELETE FROM units WHERE id=$1 AND tenant_id=$2 RETURNING id', [req.params.id!, u.tenantId]);
-    if (!r.rows[0]) throw HttpError.notFound('Unité introuvable.');
-    res.json({ message: 'Unité supprimée.' });
+    const used = await query(
+      "SELECT 1 FROM products WHERE unit_id=$1 LIMIT 1",
+      [req.params.id],
+    );
+    if (used.rows[0])
+      throw HttpError.conflict(
+        "UNIT_IN_USE",
+        "Unité utilisée par des produits : suppression impossible.",
+      );
+    const r = await query(
+      "DELETE FROM units WHERE id=$1 AND tenant_id=$2 RETURNING id",
+      [req.params.id!, u.tenantId],
+    );
+    if (!r.rows[0]) throw HttpError.notFound("Unité introuvable.");
+    res.json({ message: "Unité supprimée." });
   }),
 );
 
 // ============================ DÉPÔTS ========================================
 router.get(
-  '/depots',
+  "/depots",
   h(async (req, res) => {
     const u = (req as AuthRequest).user;
     const r = await query(
@@ -182,42 +280,72 @@ const depotSchema = z.object({
 });
 
 async function countActiveDepots(tenantId: string): Promise<number> {
-  const r = await query('SELECT COUNT(*)::int AS n FROM depots WHERE tenant_id=$1 AND is_active', [tenantId]);
+  const r = await query(
+    "SELECT COUNT(*)::int AS n FROM depots WHERE tenant_id=$1 AND is_active",
+    [tenantId],
+  );
   return r.rows[0]!.n;
 }
 
 router.post(
-  '/depots',
+  "/depots",
   ...adminWrite,
   validateBody(depotSchema),
   h(async (req, res) => {
     const u = (req as AuthRequest).user;
     const max = req.license?.maxDepots ?? 1;
     if ((await countActiveDepots(u.tenantId)) >= max) {
-      throw new HttpError(402, 'LICENSE_LIMIT_DEPOTS', `Votre licence autorise ${max} dépôt(s) actif(s) maximum.`);
+      throw new HttpError(
+        402,
+        "LICENSE_LIMIT_DEPOTS",
+        `Votre licence autorise ${max} dépôt(s) actif(s) maximum.`,
+      );
     }
     const r = await query(
-      'INSERT INTO depots (tenant_id, name, address, phone, owner_id) VALUES ($1,$2,$3,$4,$5) RETURNING *',
-      [u.tenantId, req.body.name, req.body.address ?? null, req.body.phone ?? null, req.body.ownerId ?? null],
+      "INSERT INTO depots (tenant_id, name, address, phone, owner_id) VALUES ($1,$2,$3,$4,$5) RETURNING *",
+      [
+        u.tenantId,
+        req.body.name,
+        req.body.address ?? null,
+        req.body.phone ?? null,
+        req.body.ownerId ?? null,
+      ],
     );
-    await writeAudit({ tenantId: u.tenantId, userId: u.id, userName: u.name, action: 'CREATE', entity: 'depot', entityId: r.rows[0]?.id ?? null, newState: r.rows[0] });
+    await writeAudit({
+      tenantId: u.tenantId,
+      userId: u.id,
+      userName: u.name,
+      action: "CREATE",
+      entity: "depot",
+      entityId: r.rows[0]?.id ?? null,
+      newState: r.rows[0],
+    });
     res.status(201).json(r.rows[0]);
   }),
 );
 
 router.patch(
-  '/depots/:id',
+  "/depots/:id",
   ...adminWrite,
   validateParams(uuidParam),
-  validateBody(depotSchema.partial().extend({ isActive: z.boolean().optional() })),
+  validateBody(
+    depotSchema.partial().extend({ isActive: z.boolean().optional() }),
+  ),
   h(async (req, res) => {
     const u = (req as AuthRequest).user;
-    const prev = await query('SELECT * FROM depots WHERE id=$1 AND tenant_id=$2', [req.params.id!, u.tenantId]);
-    if (!prev.rows[0]) throw HttpError.notFound('Dépôt introuvable.');
+    const prev = await query(
+      "SELECT * FROM depots WHERE id=$1 AND tenant_id=$2",
+      [req.params.id!, u.tenantId],
+    );
+    if (!prev.rows[0]) throw HttpError.notFound("Dépôt introuvable.");
     if (req.body.isActive === true && !prev.rows[0].is_active) {
       const max = req.license?.maxDepots ?? 1;
       if ((await countActiveDepots(u.tenantId)) >= max) {
-        throw new HttpError(402, 'LICENSE_LIMIT_DEPOTS', `Votre licence autorise ${max} dépôt(s) actif(s) maximum.`);
+        throw new HttpError(
+          402,
+          "LICENSE_LIMIT_DEPOTS",
+          `Votre licence autorise ${max} dépôt(s) actif(s) maximum.`,
+        );
       }
     }
     const b = req.body;
@@ -225,20 +353,38 @@ router.patch(
       `UPDATE depots SET name=COALESCE($3,name), address=COALESCE($4,address), phone=COALESCE($5,phone),
               owner_id=COALESCE($6,owner_id), is_active=COALESCE($7,is_active), updated_at=now()
         WHERE id=$1 AND tenant_id=$2 RETURNING *`,
-      [req.params.id!, u.tenantId, b.name ?? null, b.address ?? null, b.phone ?? null, b.ownerId ?? null, b.isActive ?? null],
+      [
+        req.params.id!,
+        u.tenantId,
+        b.name ?? null,
+        b.address ?? null,
+        b.phone ?? null,
+        b.ownerId ?? null,
+        b.isActive ?? null,
+      ],
     );
-    await writeAudit({ tenantId: u.tenantId, userId: u.id, userName: u.name, action: 'UPDATE', entity: 'depot', entityId: req.params.id!, previousState: prev.rows[0], newState: r.rows[0] });
+    await writeAudit({
+      tenantId: u.tenantId,
+      userId: u.id,
+      userName: u.name,
+      action: "UPDATE",
+      entity: "depot",
+      entityId: req.params.id!,
+      previousState: prev.rows[0],
+      newState: r.rows[0],
+    });
     res.json(r.rows[0]);
   }),
 );
 
 /** Stock du dépôt (consultation ADMIN/VENDEUR). */
 router.get(
-  '/depots/:id/stock',
+  "/depots/:id/stock",
   validateParams(uuidParam),
   h(async (req, res) => {
     const u = (req as AuthRequest).user;
-    const search = typeof req.query.search === 'string' ? req.query.search.trim() : '';
+    const search =
+      typeof req.query.search === "string" ? req.query.search.trim() : "";
     const r = await query(
       `SELECT p.id, p.name, p.barcode, p.selling_price, p.min_stock_level,
               un.symbol AS unit_symbol, COALESCE(SUM(sl.quantity),0)::float AS quantity
@@ -265,7 +411,7 @@ const supplierSchema = z.object({
 });
 
 router.get(
-  '/suppliers',
+  "/suppliers",
   h(async (req, res) => {
     const r = await query(
       `SELECT s.*, COALESCE(rc.c, 0)::int AS receipt_count
@@ -280,12 +426,15 @@ router.get(
 );
 
 router.get(
-  '/suppliers/:id',
+  "/suppliers/:id",
   validateParams(uuidParam),
   h(async (req, res) => {
     const t = (req as AuthRequest).user.tenantId;
-    const s = await query('SELECT * FROM suppliers WHERE id=$1 AND tenant_id=$2', [req.params.id!, t]);
-    if (!s.rows[0]) throw HttpError.notFound('Fournisseur introuvable.');
+    const s = await query(
+      "SELECT * FROM suppliers WHERE id=$1 AND tenant_id=$2",
+      [req.params.id!, t],
+    );
+    if (!s.rows[0]) throw HttpError.notFound("Fournisseur introuvable.");
     const receipts = await query(
       `SELECT sr.id, sr.reference, sr.created_at, d.name AS depot_name,
               COALESCE(SUM(sri.base_qty * sri.unit_cost),0)::float AS total_cost,
@@ -302,53 +451,97 @@ router.get(
 );
 
 router.post(
-  '/suppliers',
+  "/suppliers",
   ...adminWrite,
   validateBody(supplierSchema),
   h(async (req, res) => {
     const u = (req as AuthRequest).user;
     const b = req.body;
     const r = await query(
-      'INSERT INTO suppliers (tenant_id, name, email, phone, address, notes) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *',
-      [u.tenantId, b.name, b.email ?? null, b.phone ?? null, b.address ?? null, b.notes ?? null],
+      "INSERT INTO suppliers (tenant_id, name, email, phone, address, notes) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *",
+      [
+        u.tenantId,
+        b.name,
+        b.email ?? null,
+        b.phone ?? null,
+        b.address ?? null,
+        b.notes ?? null,
+      ],
     );
-    await writeAudit({ tenantId: u.tenantId, userId: u.id, userName: u.name, action: 'CREATE', entity: 'supplier', entityId: r.rows[0]?.id ?? null, newState: r.rows[0] });
+    await writeAudit({
+      tenantId: u.tenantId,
+      userId: u.id,
+      userName: u.name,
+      action: "CREATE",
+      entity: "supplier",
+      entityId: r.rows[0]?.id ?? null,
+      newState: r.rows[0],
+    });
     res.status(201).json(r.rows[0]);
   }),
 );
 
 router.patch(
-  '/suppliers/:id',
+  "/suppliers/:id",
   ...adminWrite,
   validateParams(uuidParam),
   validateBody(supplierSchema.partial()),
   h(async (req, res) => {
     const u = (req as AuthRequest).user;
-    const prev = await query('SELECT * FROM suppliers WHERE id=$1 AND tenant_id=$2', [req.params.id!, u.tenantId]);
-    if (!prev.rows[0]) throw HttpError.notFound('Fournisseur introuvable.');
+    const prev = await query(
+      "SELECT * FROM suppliers WHERE id=$1 AND tenant_id=$2",
+      [req.params.id!, u.tenantId],
+    );
+    if (!prev.rows[0]) throw HttpError.notFound("Fournisseur introuvable.");
     const b = req.body;
     const r = await query(
       `UPDATE suppliers SET name=COALESCE($3,name), email=COALESCE($4,email), phone=COALESCE($5,phone),
               address=COALESCE($6,address), notes=COALESCE($7,notes), updated_at=now()
         WHERE id=$1 AND tenant_id=$2 RETURNING *`,
-      [req.params.id!, u.tenantId, b.name ?? null, b.email ?? null, b.phone ?? null, b.address ?? null, b.notes ?? null],
+      [
+        req.params.id!,
+        u.tenantId,
+        b.name ?? null,
+        b.email ?? null,
+        b.phone ?? null,
+        b.address ?? null,
+        b.notes ?? null,
+      ],
     );
     res.json(r.rows[0]);
   }),
 );
 
 router.delete(
-  '/suppliers/:id',
+  "/suppliers/:id",
   ...adminWrite,
   validateParams(uuidParam),
   h(async (req, res) => {
     const u = (req as AuthRequest).user;
-    const used = await query('SELECT 1 FROM stock_receipts WHERE supplier_id=$1 LIMIT 1', [req.params.id]);
-    if (used.rows[0]) throw HttpError.conflict('SUPPLIER_IN_USE', 'Fournisseur lié à des réceptions : suppression impossible.');
-    const r = await query('DELETE FROM suppliers WHERE id=$1 AND tenant_id=$2 RETURNING id', [req.params.id!, u.tenantId]);
-    if (!r.rows[0]) throw HttpError.notFound('Fournisseur introuvable.');
-    await writeAudit({ tenantId: u.tenantId, userId: u.id, userName: u.name, action: 'DELETE', entity: 'supplier', entityId: req.params.id!, previousState: r.rows[0] });
-    res.json({ message: 'Fournisseur supprimé.' });
+    const used = await query(
+      "SELECT 1 FROM stock_receipts WHERE supplier_id=$1 LIMIT 1",
+      [req.params.id],
+    );
+    if (used.rows[0])
+      throw HttpError.conflict(
+        "SUPPLIER_IN_USE",
+        "Fournisseur lié à des réceptions : suppression impossible.",
+      );
+    const r = await query(
+      "DELETE FROM suppliers WHERE id=$1 AND tenant_id=$2 RETURNING id",
+      [req.params.id!, u.tenantId],
+    );
+    if (!r.rows[0]) throw HttpError.notFound("Fournisseur introuvable.");
+    await writeAudit({
+      tenantId: u.tenantId,
+      userId: u.id,
+      userName: u.name,
+      action: "DELETE",
+      entity: "supplier",
+      entityId: req.params.id!,
+      previousState: r.rows[0],
+    });
+    res.json({ message: "Fournisseur supprimé." });
   }),
 );
 

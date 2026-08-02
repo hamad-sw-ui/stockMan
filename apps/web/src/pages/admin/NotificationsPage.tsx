@@ -1,34 +1,60 @@
 /** Centre de notifications : historique des envois + marquage lus.
  *  Les paramètres d'alertes SMS/WhatsApp sont dans Paramètres > Alertes. */
-import { useState } from 'react';
-import { Link } from 'react-router-dom';
-import { Badge, Button, Card, EmptyState, ErrorState, PageHeader, Pagination, Spinner } from '../../components/ui';
-import { patch, post } from '../../lib/http';
-import { formatDateTime, notificationTypeLabel } from '../../lib/format';
-import { invalidateQueries, useQuery } from '../../lib/query';
-import { useToast } from '../../store/toast';
-import type { NotificationRow, Paged } from '../../lib/types';
+import { useState } from "react";
+import { Link } from "react-router-dom";
+import {
+  Badge,
+  Button,
+  Card,
+  EmptyState,
+  ErrorState,
+  PageHeader,
+  Pagination,
+  Spinner,
+} from "../../components/ui";
+import { patch, post } from "../../lib/http";
+import { formatDateTime, notificationTypeLabel } from "../../lib/format";
+import { invalidateQueries, useQuery } from "../../lib/query";
+import { useToast } from "../../store/toast";
+import type { NotificationRow, Paged } from "../../lib/types";
 
-const statusTone = (s: string): 'ok' | 'warn' | 'danger' | 'info' => (s === 'SENT' ? 'ok' : s === 'FAILED' ? 'danger' : s === 'READ' ? 'info' : 'warn');
-const statusLabel = (s: string) => (s === 'SENT' ? 'Envoyée' : s === 'FAILED' ? 'Échec' : s === 'READ' ? 'Lue' : 'En attente');
-const channelLabel = (c: string) => (c === 'IN_APP' ? 'Dans l’app' : c);
+const statusTone = (s: string): "ok" | "warn" | "danger" | "info" =>
+  s === "SENT"
+    ? "ok"
+    : s === "FAILED"
+      ? "danger"
+      : s === "READ"
+        ? "info"
+        : "warn";
+const statusLabel = (s: string) =>
+  s === "SENT"
+    ? "Envoyée"
+    : s === "FAILED"
+      ? "Échec"
+      : s === "READ"
+        ? "Lue"
+        : "En attente";
+const channelLabel = (c: string) => (c === "IN_APP" ? "Dans l’app" : c);
 
 export default function NotificationsPage() {
   const [page, setPage] = useState(1);
-  const [status, setStatus] = useState('');
-  const path = `/notifications?page=${page}&size=25${status ? `&status=${status}` : ''}`;
-  const q = useQuery<Paged<NotificationRow> & { unread: number }>(`notifications:${path}`, path);
+  const [status, setStatus] = useState("");
+  const path = `/notifications?page=${page}&size=25${status ? `&status=${status}` : ""}`;
+  const q = useQuery<Paged<NotificationRow> & { unread: number }>(
+    `notifications:${path}`,
+    path,
+  );
   const { show } = useToast();
   const [busy, setBusy] = useState(false);
 
   const markAll = async () => {
     setBusy(true);
     try {
-      await post('/notifications/read-all');
-      invalidateQueries('notifications:');
-      show('Toutes les notifications sont marquées lues.', 'success');
+      await post("/notifications/read-all");
+      invalidateQueries("notifications:");
+      show("Toutes les notifications sont marquées lues.", "success");
     } catch (e) {
-      show(e instanceof Error ? e.message : 'Erreur', 'error');
+      show(e instanceof Error ? e.message : "Erreur", "error");
     } finally {
       setBusy(false);
     }
@@ -37,9 +63,9 @@ export default function NotificationsPage() {
   const markOne = async (id: string) => {
     try {
       await patch(`/notifications/${id}/read`);
-      invalidateQueries('notifications:');
+      invalidateQueries("notifications:");
     } catch (e) {
-      show(e instanceof Error ? e.message : 'Erreur', 'error');
+      show(e instanceof Error ? e.message : "Erreur", "error");
     }
   };
 
@@ -51,7 +77,12 @@ export default function NotificationsPage() {
         actions={
           <>
             {q.data && q.data.unread > 0 ? (
-              <Button variant="outline" size="sm" loading={busy} onClick={markAll}>
+              <Button
+                variant="outline"
+                size="sm"
+                loading={busy}
+                onClick={markAll}
+              >
                 Tout marquer lu ({q.data.unread})
               </Button>
             ) : null}
@@ -62,8 +93,17 @@ export default function NotificationsPage() {
         }
       />
 
-      <div className="row" style={{ marginBottom: 12, flexWrap: 'wrap' }}>
-        <select className="select" style={{ width: 'auto' }} value={status} onChange={(e) => { setStatus(e.target.value); setPage(1); }} aria-label="Filtrer par statut">
+      <div className="row" style={{ marginBottom: 12, flexWrap: "wrap" }}>
+        <select
+          className="select"
+          style={{ width: "auto" }}
+          value={status}
+          onChange={(e) => {
+            setStatus(e.target.value);
+            setPage(1);
+          }}
+          aria-label="Filtrer par statut"
+        >
           <option value="">Tous les statuts</option>
           <option value="PENDING">En attente</option>
           <option value="SENT">Envoyées</option>
@@ -75,11 +115,14 @@ export default function NotificationsPage() {
       {q.loading ? (
         <Spinner label="Chargement…" />
       ) : q.error ? (
-        <ErrorState error={q.error} onRetry={() => invalidateQueries('notifications:')} />
+        <ErrorState
+          error={q.error}
+          onRetry={() => invalidateQueries("notifications:")}
+        />
       ) : !q.data?.data.length ? (
         <EmptyState emoji="🔕" title="Aucune notification">
-          Les alertes automatiques apparaîtront ici dès qu’un produit passera sous son seuil
-          ou qu’un lot approchera de sa péremption.
+          Les alertes automatiques apparaîtront ici dès qu’un produit passera
+          sous son seuil ou qu’un lot approchera de sa péremption.
         </EmptyState>
       ) : (
         <Card pad={false}>
@@ -97,17 +140,32 @@ export default function NotificationsPage() {
               </thead>
               <tbody>
                 {q.data.data.map((n) => (
-                  <tr key={n.id} style={n.channel === 'IN_APP' && n.status === 'SENT' ? { fontWeight: 700 } : undefined}>
+                  <tr
+                    key={n.id}
+                    style={
+                      n.channel === "IN_APP" && n.status === "SENT"
+                        ? { fontWeight: 700 }
+                        : undefined
+                    }
+                  >
                     <td style={{ maxWidth: 420 }}>{n.message}</td>
                     <td className="muted">{notificationTypeLabel(n.type)}</td>
                     <td className="muted">{channelLabel(n.channel)}</td>
                     <td>
-                      <Badge tone={statusTone(n.status)}>{statusLabel(n.status)}</Badge>
+                      <Badge tone={statusTone(n.status)}>
+                        {statusLabel(n.status)}
+                      </Badge>
                     </td>
-                    <td className="muted" style={{ whiteSpace: 'nowrap' }}>{formatDateTime(n.created_at)}</td>
+                    <td className="muted" style={{ whiteSpace: "nowrap" }}>
+                      {formatDateTime(n.created_at)}
+                    </td>
                     <td>
-                      {n.channel === 'IN_APP' && n.status === 'SENT' ? (
-                        <Button variant="ghost" size="sm" onClick={() => markOne(n.id)}>
+                      {n.channel === "IN_APP" && n.status === "SENT" ? (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => markOne(n.id)}
+                        >
                           Marquer lue
                         </Button>
                       ) : null}
@@ -119,7 +177,14 @@ export default function NotificationsPage() {
           </div>
         </Card>
       )}
-      {q.data ? <Pagination page={q.data.page} totalPages={q.data.totalPages} total={q.data.total} onPage={setPage} /> : null}
+      {q.data ? (
+        <Pagination
+          page={q.data.page}
+          totalPages={q.data.totalPages}
+          total={q.data.total}
+          onPage={setPage}
+        />
+      ) : null}
     </div>
   );
 }

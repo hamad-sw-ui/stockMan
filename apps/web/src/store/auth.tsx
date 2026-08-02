@@ -1,7 +1,20 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { get as httpGet, post as httpPost, refreshSession, setAccessToken } from '../lib/http';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
+import {
+  get as httpGet,
+  post as httpPost,
+  refreshSession,
+  setAccessToken,
+} from "../lib/http";
 
-export type Role = 'SUPER_ADMIN' | 'ADMIN' | 'VENDEUR';
+export type Role = "SUPER_ADMIN" | "ADMIN" | "VENDEUR";
 
 export interface SessionUser {
   id: string;
@@ -22,7 +35,7 @@ export interface SessionUser {
   };
   license?: {
     plan_code: string;
-    status: 'TRIAL' | 'ACTIVE' | 'EXPIRED' | 'SUSPENDED';
+    status: "TRIAL" | "ACTIVE" | "EXPIRED" | "SUSPENDED";
     end_date: string;
     max_users: number;
     max_depots: number;
@@ -40,7 +53,13 @@ interface AuthContextValue {
   booting: boolean;
   login(email: string, password: string): Promise<SessionUser>;
   loginWithPin(email: string, pin: string): Promise<SessionUser>;
-  register(input: { tenantName: string; userName: string; email: string; password: string; phone?: string }): Promise<SessionUser>;
+  register(input: {
+    tenantName: string;
+    userName: string;
+    email: string;
+    password: string;
+    phone?: string;
+  }): Promise<SessionUser>;
   logout(): Promise<void>;
   refreshUser(): Promise<void>;
   isAdmin: boolean;
@@ -50,7 +69,7 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-const SNAPSHOT_KEY = 'stockman.user';
+const SNAPSHOT_KEY = "stockman.user";
 
 function loadSnapshot(): SessionUser | null {
   try {
@@ -63,10 +82,10 @@ function loadSnapshot(): SessionUser | null {
 
 /** Applique la couleur d'entreprise du tenant (personnalisation visuelle). */
 function applyTenantTheme(user: SessionUser | null) {
-  const color = user?.tenant.primaryColor || '#059669';
-  document.documentElement.style.setProperty('--primary', color);
+  const color = user?.tenant.primaryColor || "#059669";
+  document.documentElement.style.setProperty("--primary", color);
   const meta = document.querySelector('meta[name="theme-color"]');
-  if (meta) meta.setAttribute('content', color);
+  if (meta) meta.setAttribute("content", color);
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -88,7 +107,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (cancelled) return;
       if (ok) {
         try {
-          const me = await httpGet<SessionUser>('/auth/me');
+          const me = await httpGet<SessionUser>("/auth/me");
           if (!cancelled) settle(me);
         } catch {
           if (!cancelled) settle(null);
@@ -114,7 +133,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = useCallback(
     async (email: string, password: string) => {
-      const res = await httpPost<LoginResponse>('/auth/login', { email, password });
+      const res = await httpPost<LoginResponse>("/auth/login", {
+        email,
+        password,
+      });
       return finishLogin(res);
     },
     [finishLogin],
@@ -122,15 +144,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const loginWithPin = useCallback(
     async (email: string, pin: string) => {
-      const res = await httpPost<LoginResponse>('/auth/pin', { email, pin });
+      const res = await httpPost<LoginResponse>("/auth/pin", { email, pin });
       return finishLogin(res);
     },
     [finishLogin],
   );
 
   const register = useCallback(
-    async (input: { tenantName: string; userName: string; email: string; password: string; phone?: string }) => {
-      const res = await httpPost<LoginResponse>('/auth/register', input);
+    async (input: {
+      tenantName: string;
+      userName: string;
+      email: string;
+      password: string;
+      phone?: string;
+    }) => {
+      const res = await httpPost<LoginResponse>("/auth/register", input);
       return finishLogin(res);
     },
     [finishLogin],
@@ -138,7 +166,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(async () => {
     try {
-      await httpPost('/auth/logout');
+      await httpPost("/auth/logout");
     } catch {
       /* déconnexion locale quand même */
     }
@@ -147,7 +175,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [settle]);
 
   const refreshUser = useCallback(async () => {
-    const me = await httpGet<SessionUser>('/auth/me');
+    const me = await httpGet<SessionUser>("/auth/me");
     settle(me);
   }, [settle]);
 
@@ -160,9 +188,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       register,
       logout,
       refreshUser,
-      isAdmin: user?.role === 'ADMIN',
-      isSuperAdmin: user?.role === 'SUPER_ADMIN',
-      isVendor: user?.role === 'VENDEUR',
+      isAdmin: user?.role === "ADMIN",
+      isSuperAdmin: user?.role === "SUPER_ADMIN",
+      isVendor: user?.role === "VENDEUR",
     }),
     [user, booting, login, loginWithPin, register, logout, refreshUser],
   );
@@ -172,6 +200,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
 export function useAuth(): AuthContextValue {
   const ctx = useContext(AuthContext);
-  if (!ctx) throw new Error('useAuth doit être utilisé dans <AuthProvider>');
+  if (!ctx) throw new Error("useAuth doit être utilisé dans <AuthProvider>");
   return ctx;
 }

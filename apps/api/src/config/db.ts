@@ -1,6 +1,6 @@
-import { Pool, PoolClient, QueryResult, QueryResultRow, types } from 'pg';
-import { getEnv } from './env';
-import { logger } from '../lib/logger';
+import { Pool, PoolClient, QueryResult, QueryResultRow, types } from "pg";
+import { getEnv } from "./env";
+import { logger } from "../lib/logger";
 
 /**
  * NUMERIC (OID 1700) renvoyé comme NUMBER et non comme string :
@@ -19,7 +19,9 @@ let pool: Pool | undefined;
 export function getPool(): Pool {
   if (!pool) {
     pool = new Pool({ connectionString: getEnv().DATABASE_URL, max: 20 });
-    pool.on('error', (err) => logger.error('Erreur pool PostgreSQL', { message: err.message }));
+    pool.on("error", (err) =>
+      logger.error("Erreur pool PostgreSQL", { message: err.message }),
+    );
   }
   return pool;
 }
@@ -40,16 +42,18 @@ export async function query<T extends QueryResultRow = QueryResultRow>(
 
 /** Exécute `fn` dans une transaction (BEGIN/COMMIT/ROLLBACK) sur UN client
  *  dédié — garantit l'atomicité des opérations multi-étapes. */
-export async function withTransaction<T>(fn: (client: PoolClient) => Promise<T>): Promise<T> {
+export async function withTransaction<T>(
+  fn: (client: PoolClient) => Promise<T>,
+): Promise<T> {
   const client = await getPool().connect();
   try {
-    await client.query('BEGIN');
+    await client.query("BEGIN");
     const result = await fn(client);
-    await client.query('COMMIT');
+    await client.query("COMMIT");
     return result;
   } catch (err) {
     try {
-      await client.query('ROLLBACK');
+      await client.query("ROLLBACK");
     } catch {
       /* noop */
     }

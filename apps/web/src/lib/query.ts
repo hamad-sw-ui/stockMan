@@ -1,7 +1,7 @@
 /** Mini-couche de requêtes (fetch + cache léger + invalidation) —
  *  volontairement simple et testable. */
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { ApiError, get } from './http';
+import { useCallback, useEffect, useRef, useState } from "react";
+import { ApiError, get } from "./http";
 
 interface QueryState<T> {
   data: T | undefined;
@@ -19,11 +19,20 @@ export function invalidateQueries(prefix?: string): void {
   for (const k of [...cache.keys()]) if (k.startsWith(prefix)) cache.delete(k);
 }
 
-export function useQuery<T = unknown>(key: string, path: string | null): QueryState<T> {
-  const [state, setState] = useState<{ data?: T; error: ApiError | null; loading: boolean; refetching: boolean }>(() => {
+export function useQuery<T = unknown>(
+  key: string,
+  path: string | null,
+): QueryState<T> {
+  const [state, setState] = useState<{
+    data?: T;
+    error: ApiError | null;
+    loading: boolean;
+    refetching: boolean;
+  }>(() => {
     const hit = path ? cache.get(key) : undefined;
     return {
-      data: hit && Date.now() - hit.at < CACHE_TTL ? (hit.data as T) : undefined,
+      data:
+        hit && Date.now() - hit.at < CACHE_TTL ? (hit.data as T) : undefined,
       error: null,
       loading: !!path && !hit,
       refetching: false,
@@ -40,14 +49,30 @@ export function useQuery<T = unknown>(key: string, path: string | null): QuerySt
   const fetchIt = useCallback(
     async (background = false) => {
       if (!path) return;
-      if (!background) setState((s) => ({ ...s, loading: !s.data, refetching: !!s.data, error: null }));
+      if (!background)
+        setState((s) => ({
+          ...s,
+          loading: !s.data,
+          refetching: !!s.data,
+          error: null,
+        }));
       try {
         const data = await get<T>(path);
         cache.set(key, { data, at: Date.now() });
-        if (alive.current) setState({ data, error: null, loading: false, refetching: false });
+        if (alive.current)
+          setState({ data, error: null, loading: false, refetching: false });
       } catch (e) {
-        const err = e instanceof ApiError ? e : new ApiError(0, 'ERROR', 'Erreur inattendue.');
-        if (alive.current) setState((s) => ({ ...s, error: err, loading: false, refetching: false }));
+        const err =
+          e instanceof ApiError
+            ? e
+            : new ApiError(0, "ERROR", "Erreur inattendue.");
+        if (alive.current)
+          setState((s) => ({
+            ...s,
+            error: err,
+            loading: false,
+            refetching: false,
+          }));
       }
     },
     [key, path],
@@ -57,7 +82,13 @@ export function useQuery<T = unknown>(key: string, path: string | null): QuerySt
     const hit = cache.get(key);
     const fresh = hit && Date.now() - hit.at < CACHE_TTL;
     if (path && !fresh) void fetchIt();
-    else if (fresh) setState({ data: hit!.data as T, error: null, loading: false, refetching: false });
+    else if (fresh)
+      setState({
+        data: hit!.data as T,
+        error: null,
+        loading: false,
+        refetching: false,
+      });
   }, [key, path, fetchIt]);
 
   return {
@@ -95,10 +126,14 @@ export function useMutation<TVars = void, TData = unknown>(
       setError(null);
       try {
         const data = await fn(vars);
-        if (opts?.invalidate) for (const p of opts.invalidate) invalidateQueries(p);
+        if (opts?.invalidate)
+          for (const p of opts.invalidate) invalidateQueries(p);
         return data;
       } catch (e) {
-        const err = e instanceof ApiError ? e : new ApiError(0, 'ERROR', 'Erreur inattendue.');
+        const err =
+          e instanceof ApiError
+            ? e
+            : new ApiError(0, "ERROR", "Erreur inattendue.");
         if (alive.current) setError(err);
         throw err;
       } finally {

@@ -4,7 +4,9 @@
  */
 
 /** Normalise une valeur date/timestamptz venue du driver en « YYYY-MM-DD ». */
-export function toDateStr(value: Date | string | null | undefined): string | null {
+export function toDateStr(
+  value: Date | string | null | undefined,
+): string | null {
   if (value == null) return null;
   const d = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(d.getTime())) return null;
@@ -19,7 +21,7 @@ export function toDateStr(value: Date | string | null | undefined): string | nul
  */
 export function tzOffsetHours(tz: string, at: Date = new Date()): number {
   try {
-    const local = new Date(at.toLocaleString('en-US', { timeZone: tz }));
+    const local = new Date(at.toLocaleString("en-US", { timeZone: tz }));
     return (local.getTime() - at.getTime()) / 3_600_000;
   } catch {
     return 1; // repli Douala (UTC+1, sans DST)
@@ -31,7 +33,11 @@ export function dateRange(from: string, to: string): string[] {
   const days: string[] = [];
   const start = new Date(`${from}T00:00:00Z`);
   const end = new Date(`${to}T00:00:00Z`);
-  for (let d = start.getTime(); d <= end.getTime() && days.length < 400; d += 86_400_000) {
+  for (
+    let d = start.getTime();
+    d <= end.getTime() && days.length < 400;
+    d += 86_400_000
+  ) {
     days.push(new Date(d).toISOString().slice(0, 10));
   }
   return days;

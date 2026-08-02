@@ -1,9 +1,9 @@
-import { buildApp } from './app';
-import { getEnv } from './config/env';
-import { closePool } from './config/db';
-import { logger } from './lib/logger';
-import { applyMigrations } from './db/migrations';
-import { startScheduler } from './services/scheduler';
+import { buildApp } from "./app";
+import { getEnv } from "./config/env";
+import { closePool } from "./config/db";
+import { logger } from "./lib/logger";
+import { applyMigrations } from "./db/migrations";
+import { startScheduler } from "./services/scheduler";
 
 async function main() {
   const env = getEnv();
@@ -26,11 +26,13 @@ async function main() {
     });
     setTimeout(() => process.exit(1), 10_000).unref();
   };
-  process.on('SIGINT', () => shutdown('SIGINT'));
-  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on("SIGINT", () => shutdown("SIGINT"));
+  process.on("SIGTERM", () => shutdown("SIGTERM"));
 }
 
 main().catch((err) => {
-  logger.error('Démarrage impossible', { message: err instanceof Error ? err.message : String(err) });
+  logger.error("Démarrage impossible", {
+    message: err instanceof Error ? err.message : String(err),
+  });
   process.exit(1);
 });

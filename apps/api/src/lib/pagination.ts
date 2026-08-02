@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import { z } from "zod";
 
 /** Pagination page/size classique (listes métier). */
 export const pageQuerySchema = z.object({
@@ -24,15 +24,20 @@ export function paged<T>(rows: T[], total: number, q: PageQuery) {
 /** Pagination cursor (journaux append-only : mouvements, audit).
  *  Cursor = `${created_at ISO}|${id}` décodé côté SQL. */
 export function encodeCursor(createdAt: Date | string, id: string): string {
-  const iso = createdAt instanceof Date ? createdAt.toISOString() : new Date(createdAt).toISOString();
-  return Buffer.from(`${iso}|${id}`, 'utf8').toString('base64url');
+  const iso =
+    createdAt instanceof Date
+      ? createdAt.toISOString()
+      : new Date(createdAt).toISOString();
+  return Buffer.from(`${iso}|${id}`, "utf8").toString("base64url");
 }
 
-export function decodeCursor(cursor?: string): { createdAt: string; id: string } | null {
+export function decodeCursor(
+  cursor?: string,
+): { createdAt: string; id: string } | null {
   if (!cursor) return null;
   try {
-    const raw = Buffer.from(cursor, 'base64url').toString('utf8');
-    const idx = raw.lastIndexOf('|');
+    const raw = Buffer.from(cursor, "base64url").toString("utf8");
+    const idx = raw.lastIndexOf("|");
     if (idx <= 0) return null;
     return { createdAt: raw.slice(0, idx), id: raw.slice(idx + 1) };
   } catch {

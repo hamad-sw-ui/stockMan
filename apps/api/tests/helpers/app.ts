@@ -1,16 +1,16 @@
-import crypto from 'crypto';
-import { newDb, IMemoryDb, DataType } from 'pg-mem';
-import type { Pool } from 'pg';
-import request from 'supertest';
+import crypto from "crypto";
+import { newDb, IMemoryDb, DataType } from "pg-mem";
+import type { Pool } from "pg";
+import request from "supertest";
 
 /**
  * Base de test en mémoire (pg-mem). Le schéma V2 réel est appliqué par le
  * runner de migrations de production — la chaîne SQL est ainsi couverte par
  * les tests unitaires ET par la CI sur une vraie Postgres.
  */
-import { setPool, closePool } from '../../src/config/db';
-import { applyMigrations } from '../../src/db/migrations';
-import { buildApp } from '../../src/app';
+import { setPool, closePool } from "../../src/config/db";
+import { applyMigrations } from "../../src/db/migrations";
+import { buildApp } from "../../src/app";
 
 export interface TestContext {
   db: IMemoryDb;
@@ -21,9 +21,9 @@ export interface TestContext {
 
 /** Fonctions/utilitaires absents de pg-mem, enregistrés pour parité. */
 function registerShims(db: IMemoryDb) {
-  db.registerExtension('pgcrypto', (schema) => {
+  db.registerExtension("pgcrypto", (schema) => {
     schema.registerFunction({
-      name: 'gen_random_uuid',
+      name: "gen_random_uuid",
       returns: DataType.uuid,
       implementation: () => crypto.randomUUID(),
       impure: true,
@@ -31,20 +31,20 @@ function registerShims(db: IMemoryDb) {
   });
   const { public: pub } = db;
   pub.registerFunction({
-    name: 'gen_random_uuid',
+    name: "gen_random_uuid",
     returns: DataType.uuid,
     implementation: () => crypto.randomUUID(),
     impure: true,
   });
   pub.registerFunction({
-    name: 'pg_try_advisory_lock',
+    name: "pg_try_advisory_lock",
     args: [DataType.integer],
     returns: DataType.bool,
     implementation: () => true,
     impure: true,
   });
   pub.registerFunction({
-    name: 'pg_advisory_unlock',
+    name: "pg_advisory_unlock",
     args: [DataType.integer],
     returns: DataType.bool,
     implementation: () => true,
@@ -53,7 +53,7 @@ function registerShims(db: IMemoryDb) {
 }
 
 export async function createTestContext(): Promise<TestContext> {
-  process.env.NODE_ENV = 'test';
+  process.env.NODE_ENV = "test";
   const db = newDb({ autoCreateForeignKeyIndices: true });
   registerShims(db);
   const { Pool } = db.adapters.createPg();
@@ -96,37 +96,53 @@ export interface SeedIds {
 export async function seedTenant(ctx: TestContext): Promise<SeedIds> {
   const { agent, pool } = ctx;
   const email = `admin-${crypto.randomUUID().slice(0, 8)}@test.cm`;
-  const password = 'Passw0rd!';
+  const password = "Passw0rd!";
 
-  const reg = await agent.post('/api/auth/register').send({
-    tenantName: 'SARL Test',
-    userName: 'Admin Test',
+  const reg = await agent.post("/api/auth/register").send({
+    tenantName: "SARL Test",
+    userName: "Admin Test",
     email,
     password,
   });
-  if (reg.status !== 201) throw new Error('register échoué: ' + JSON.stringify(reg.body));
+  if (reg.status !== 201)
+    throw new Error("register échoué: " + JSON.stringify(reg.body));
   const adminToken: string = reg.body.accessToken;
   const adminId: string = reg.body.user.id;
   const tenantId: string = reg.body.user.tenantId;
 
   const auth = { Authorization: `Bearer ${adminToken}` };
 
-  const depots = await agent.get('/api/depots').set(auth);
+  const depots = await agent.get("/api/depots").set(auth);
   const depotId: string = depots.body[0].id;
 
-  const units = await agent.get('/api/units').set(auth);
-  const unitId: string = units.body.find((u: { symbol: string }) => u.symbol === 'Pce').id;
-  const cartonId: string = units.body.find((u: { symbol: string }) => u.symbol === 'Ctn').id;
+  const units = await agent.get("/api/units").set(auth);
+  const unitId: string = units.body.find(
+    (u: { symbol: string }) => u.symbol === "Pce",
+  ).id;
+  const cartonId: string = units.body.find(
+    (u: { symbol: string }) => u.symbol === "Ctn",
+  ).id;
 
-  const cat = await agent.post('/api/categories').set(auth).send({ name: 'Boissons' });
+  const cat = await agent
+    .post("/api/categories")
+    .set(auth)
+    .send({ name: "Boissons" });
   const categoryId: string = cat.body.id;
 
   // Vendeur affecté au dépôt (PIN 4321)
   const vendor = await agent
-    .post('/api/users')
+    .post("/api/users")
     .set(auth)
-    .send({ name: 'Vendeur Test', email: `vendeur-${crypto.randomUUID().slice(0, 8)}@test.cm`, role: 'VENDEUR', depotId, password: 'Vendeur1!', pin: '4321' });
-  if (vendor.status !== 201) throw new Error('création vendeur: ' + JSON.stringify(vendor.body));
+    .send({
+      name: "Vendeur Test",
+      email: `vendeur-${crypto.randomUUID().slice(0, 8)}@test.cm`,
+      role: "VENDEUR",
+      depotId,
+      password: "Vendeur1!",
+      pin: "4321",
+    });
+  if (vendor.status !== 201)
+    throw new Error("création vendeur: " + JSON.stringify(vendor.body));
   const vendorEmail: string = vendor.body.email;
   const vendorId: string = vendor.body.id;
   // TRIAL = 2 utilisateurs max → la création du vendeur peut buter sur le plafond licence ;
@@ -136,26 +152,37 @@ export async function seedTenant(ctx: TestContext): Promise<SeedIds> {
     [tenantId],
   );
 
-  const vLogin = await agent.post('/api/auth/login').send({ email: vendorEmail, password: 'Vendeur1!' });
+  const vLogin = await agent
+    .post("/api/auth/login")
+    .send({ email: vendorEmail, password: "Vendeur1!" });
   const vendorToken: string = vLogin.body.accessToken;
 
   // Produit sans stock initial (le stock arrive via réceptions)
-  const prod = await agent
-    .post('/api/products')
-    .set(auth)
-    .send({
-      name: 'Eau Test 1.5L',
-      barcode: '6100000000011',
-      purchasePrice: 200,
-      sellingPrice: 400,
-      minStockLevel: 5,
-      unitId,
-      categoryId,
-    });
-  if (prod.status !== 201) throw new Error('création produit: ' + JSON.stringify(prod.body));
+  const prod = await agent.post("/api/products").set(auth).send({
+    name: "Eau Test 1.5L",
+    barcode: "6100000000011",
+    purchasePrice: 200,
+    sellingPrice: 400,
+    minStockLevel: 5,
+    unitId,
+    categoryId,
+  });
+  if (prod.status !== 201)
+    throw new Error("création produit: " + JSON.stringify(prod.body));
   const productId: string = prod.body.id;
 
-  return { adminToken, adminId, tenantId, depotId, vendorToken, vendorId, unitId, cartonId, categoryId, productId };
+  return {
+    adminToken,
+    adminId,
+    tenantId,
+    depotId,
+    vendorToken,
+    vendorId,
+    unitId,
+    cartonId,
+    categoryId,
+    productId,
+  };
 }
 
 /** Réceptionne du stock sur le produit (avec lot optionnel). */
@@ -163,14 +190,19 @@ export async function receiveStock(
   ctx: TestContext,
   ids: SeedIds,
   quantity: number,
-  opts: { unitId?: string; batchNumber?: string; expiryDate?: string; depotId?: string } = {},
+  opts: {
+    unitId?: string;
+    batchNumber?: string;
+    expiryDate?: string;
+    depotId?: string;
+  } = {},
 ): Promise<void> {
   const res = await ctx.agent
-    .post('/api/stock/receipts')
-    .set('Authorization', `Bearer ${ids.adminToken}`)
+    .post("/api/stock/receipts")
+    .set("Authorization", `Bearer ${ids.adminToken}`)
     .send({
       depotId: opts.depotId ?? ids.depotId,
-      reference: 'TEST-RCV',
+      reference: "TEST-RCV",
       items: [
         {
           productId: ids.productId,
@@ -182,5 +214,6 @@ export async function receiveStock(
         },
       ],
     });
-  if (res.status !== 201) throw new Error('réception échouée: ' + JSON.stringify(res.body));
+  if (res.status !== 201)
+    throw new Error("réception échouée: " + JSON.stringify(res.body));
 }

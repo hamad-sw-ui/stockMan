@@ -1,29 +1,36 @@
-import { Router } from 'express';
-import { z } from 'zod';
-import { query, withTransaction } from '../config/db';
-import { h } from '../lib/asyncHandler';
-import { HttpError } from '../lib/errors';
-import { writeAudit } from '../lib/audit';
-import { pageParams, paged, pageQuerySchema } from '../lib/pagination';
-import { authenticate, AuthRequest, requireRole } from '../middleware/auth';
-import { requireActiveLicense } from '../middleware/license';
-import { validateBody, validateParams, validateQuery, uuidParam, money } from '../middleware/validate';
-import { increaseLevel, recordMovement } from '../services/stockService';
+import { Router } from "express";
+import { z } from "zod";
+import { query, withTransaction } from "../config/db";
+import { h } from "../lib/asyncHandler";
+import { HttpError } from "../lib/errors";
+import { normHeader, parseCsv, parseMoney } from "../lib/csv";
+import { writeAudit } from "../lib/audit";
+import { pageParams, paged, pageQuerySchema } from "../lib/pagination";
+import { authenticate, AuthRequest, requireRole } from "../middleware/auth";
+import { requireActiveLicense } from "../middleware/license";
+import {
+  validateBody,
+  validateParams,
+  validateQuery,
+  uuidParam,
+  money,
+} from "../middleware/validate";
+import { increaseLevel, recordMovement } from "../services/stockService";
 
 const router = Router();
 router.use(authenticate);
-const adminWrite = [requireRole('ADMIN'), requireActiveLicense()];
+const adminWrite = [requireRole("ADMIN"), requireActiveLicense()];
 
 // ============================ LISTE (paginée, recherche réelle) =============
 const listQuery = pageQuerySchema.extend({
-  search: z.string().trim().max(200).default(''),
+  search: z.string().trim().max(200).default(""),
   categoryId: z.string().uuid().optional(),
   depotId: z.string().uuid().optional(),
-  status: z.enum(['active', 'low', 'out', 'archived']).optional(),
+  status: z.enum(["active", "low", "out", "archived"]).optional(),
 });
 
 router.get(
-  '/',
+  "/",
   validateQuery(listQuery),
   h(async (req, res) => {
     const t = (req as AuthRequest).user.tenantId;
@@ -35,19 +42,25 @@ router.get(
     // (jointures 1:1) : sans effet de fanout variants × niveaux.
     const params: unknown[] = [t];
     const add = (v: unknown) => `$${params.push(v)}`;
-    const conds = ['p.tenant_id = $1'];
+    const conds = ["p.tenant_id = $1"];
     if (q.search) {
       const p = add(q.search);
-      conds.push(`(p.name ILIKE '%'||${p}||'%' OR p.barcode = ${p} OR c.name ILIKE '%'||${p}||'%')`);
+      conds.push(
+        `(p.name ILIKE '%'||${p}||'%' OR p.barcode = ${p} OR c.name ILIKE '%'||${p}||'%')`,
+      );
     }
     if (q.categoryId) conds.push(`p.category_id = ${add(q.categoryId)}`);
-    conds.push(q.status === 'archived' ? 'p.archived_at IS NOT NULL' : 'p.archived_at IS NULL');
+    conds.push(
+      q.status === "archived"
+        ? "p.archived_at IS NOT NULL"
+        : "p.archived_at IS NULL",
+    );
 
     const depotJoin = q.depotId
       ? `LEFT JOIN (SELECT product_id, depot_id, SUM(quantity)::float AS depot_qty FROM stock_levels GROUP BY product_id, depot_id) ld
            ON ld.product_id = p.id AND ld.depot_id = ${add(q.depotId)}`
-      : '';
-    const where = `WHERE ${conds.join(' AND ')}`;
+      : "";
+    const where = `WHERE ${conds.join(" AND ")}`;
     const base = `
       FROM products p
       LEFT JOIN categories c ON c.id = p.category_id
@@ -59,11 +72,19 @@ router.get(
         ON vc.product_id = p.id
       ${where}`;
     const statusFilter =
-      q.status === 'low' ? 'AND COALESCE(lt.total_qty,0) <= p.min_stock_level AND COALESCE(lt.total_qty,0) > 0' :
-      q.status === 'out' ? 'AND COALESCE(lt.total_qty,0) <= 0' : '';
+      q.status === "low"
+        ? "AND COALESCE(lt.total_qty,0) <= p.min_stock_level AND COALESCE(lt.total_qty,0) > 0"
+        : q.status === "out"
+          ? "AND COALESCE(lt.total_qty,0) <= 0"
+          : "";
 
-    const countRes = await query<{ n: number }>(`SELECT COUNT(*)::int AS n ${base} ${statusFilter}`, params);
-    const depotQtySelect = q.depotId ? 'COALESCE(ld.depot_qty, 0)::float' : '0::float';
+    const countRes = await query<{ n: number }>(
+      `SELECT COUNT(*)::int AS n ${base} ${statusFilter}`,
+      params,
+    );
+    const depotQtySelect = q.depotId
+      ? "COALESCE(ld.depot_qty, 0)::float"
+      : "0::float";
     const rows = await query(
       `SELECT p.*, c.name AS category_name, un.symbol AS unit_symbol, un.base_value AS unit_base_value,
               un.is_base AS unit_is_base,
@@ -81,7 +102,7 @@ router.get(
 
 // ============================ RECHERCHE CODE-BARRES (POS) ===================
 router.get(
-  '/barcode/:code',
+  "/barcode/:code",
   h(async (req, res) => {
     const t = (req as AuthRequest).user.tenantId;
     const code = String(req.params.code).trim();
@@ -100,16 +121,20 @@ router.get(
           WHERE p.tenant_id=$1 AND v.barcode=$2 AND p.archived_at IS NULL LIMIT 1`,
         [t, code],
       );
-      if (!v.rows[0]) throw HttpError.notFound('Aucun produit pour ce code-barres.', 'BARCODE_UNKNOWN');
-      return res.json({ ...v.rows[0], matched: 'variant' });
+      if (!v.rows[0])
+        throw HttpError.notFound(
+          "Aucun produit pour ce code-barres.",
+          "BARCODE_UNKNOWN",
+        );
+      return res.json({ ...v.rows[0], matched: "variant" });
     }
-    res.json({ ...product, matched: 'product' });
+    res.json({ ...product, matched: "product" });
   }),
 );
 
 // ============================ EXPORT CSV ====================================
 router.get(
-  '/export/csv',
+  "/export/csv",
   h(async (req, res) => {
     const t = (req as AuthRequest).user.tenantId;
     const r = await query(
@@ -124,19 +149,286 @@ router.get(
         ORDER BY p.name`,
       [t],
     );
-    const header = ['Nom', 'Catégorie', 'Code-barres', 'Prix achat', 'Prix vente', 'Quantité totale', 'Unité', 'Seuil alerte'];
-    const csv = [header, ...r.rows.map((row) => [row.name, row.category ?? '', row.barcode ?? '', row.purchase_price, row.selling_price, row.quantity, row.unit ?? '', row.min_stock_level])]
-      .map((line) => line.map((cell) => `"${String(cell ?? '').replaceAll('"', '""')}"`).join(';'))
-      .join('\r\n');
-    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-    res.setHeader('Content-Disposition', 'attachment; filename="catalogue-stockman.csv"');
-    res.send('﻿' + csv);
+    const header = [
+      "Nom",
+      "Catégorie",
+      "Code-barres",
+      "Prix achat",
+      "Prix vente",
+      "Quantité totale",
+      "Unité",
+      "Seuil alerte",
+    ];
+    const csv = [
+      header,
+      ...r.rows.map((row) => [
+        row.name,
+        row.category ?? "",
+        row.barcode ?? "",
+        row.purchase_price,
+        row.selling_price,
+        row.quantity,
+        row.unit ?? "",
+        row.min_stock_level,
+      ]),
+    ]
+      .map((line) =>
+        line
+          .map((cell) => `"${String(cell ?? "").replaceAll('"', '""')}"`)
+          .join(";"),
+      )
+      .join("\r\n");
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader(
+      "Content-Disposition",
+      'attachment; filename="catalogue-stockman.csv"',
+    );
+    res.send("﻿" + csv);
+  }),
+);
+
+// ============================ IMPORT CSV ====================================
+// Format : 1re ligne d'en-tête, séparateur « ; ». Colonnes reconnues (accents
+// indifférents) : Nom (obligatoire) ; Catégorie ; Code-barres ; Prix achat ;
+// Prix vente ; Unité (symbole ou nom) ; Seuil alerte. Les quantités ne sont
+// PAS importées : le stock entre par les réceptions (traçabilité).
+// Mise à jour si le code-barres (sinon le nom, casse indifférente) existe déjà.
+const IMPORT_MAX_ROWS = 500;
+
+router.post(
+  "/import",
+  ...adminWrite,
+  h(async (req, res) => {
+    const u = (req as AuthRequest).user;
+    const text = typeof req.body === "string" ? req.body : "";
+    if (text.trim() === "") {
+      throw HttpError.badRequest(
+        "CSV_EMPTY",
+        "Corps text/csv attendu : envoyez le fichier en brut (Content-Type: text/csv).",
+      );
+    }
+    const rows = parseCsv(text);
+    if (rows.length < 2)
+      throw HttpError.badRequest(
+        "CSV_EMPTY",
+        "Le fichier ne contient aucune ligne de données.",
+      );
+    const header = rows[0]!.map(normHeader);
+    const findCol = (preds: string[], prefix = false) =>
+      header.findIndex((hh) =>
+        prefix ? preds.some((p) => hh.startsWith(p)) : preds.includes(hh),
+      );
+    const cols = {
+      name: findCol(["nom", "produit", "designation", "name"]),
+      category: findCol(["categorie", "categories", "category"]),
+      barcode: findCol([
+        "code barres",
+        "code barre",
+        "codebarres",
+        "barcode",
+        "ean",
+      ]),
+      purchase: findCol(["prix achat", "cout achat", "pa"], true),
+      selling: findCol(["prix vente", "pv"], true),
+      unit: findCol(["unite", "unites", "symbole", "unit"]),
+      minStock: findCol(["seuil"], true),
+    };
+    if (cols.name < 0) {
+      throw HttpError.badRequest(
+        "CSV_HEADER",
+        "Première ligne d’en-tête introuvable. Colonnes reconnues : Nom;Catégorie;Code-barres;Prix achat;Prix vente;Unité;Seuil alerte.",
+      );
+    }
+    const dataRows = rows.slice(1);
+    if (dataRows.length > IMPORT_MAX_ROWS) {
+      throw HttpError.badRequest(
+        "CSV_TOO_MANY",
+        `Maximum ${IMPORT_MAX_ROWS} lignes par import (${dataRows.length} reçues) : découpez le fichier.`,
+      );
+    }
+
+    const units = (
+      await query<{
+        id: string;
+        name: string;
+        symbol: string;
+        is_base: boolean;
+      }>("SELECT id, name, symbol, is_base FROM units WHERE tenant_id=$1", [
+        u.tenantId,
+      ])
+    ).rows;
+    const baseUnit = units.find((x) => x.is_base) ?? units[0] ?? null;
+
+    let created = 0;
+    let updated = 0;
+    const errors: Array<{ ligne: number; message: string }> = [];
+    const cell = (row: string[], idx: number) =>
+      idx >= 0 ? (row[idx] ?? "").trim() : "";
+
+    for (let i = 0; i < dataRows.length; i += 1) {
+      const ligne = i + 2; // ligne 1 = en-tête
+      const row = dataRows[i]!;
+      try {
+        const name = cell(row, cols.name);
+        if (!name) throw new Error("Nom manquant.");
+        if (name.length > 255)
+          throw new Error("Nom trop long (255 caractères max).");
+
+        const price = (idx: number, label: string) => {
+          const raw = cell(row, idx);
+          if (raw === "") return null;
+          const m = parseMoney(raw);
+          if (m === null || m < 0)
+            throw new Error(`${label} illisible : « ${raw} ».`);
+          return m;
+        };
+        const purchasePrice = price(cols.purchase, "Prix achat");
+        const sellingPrice = price(cols.selling, "Prix vente");
+        const minStock = price(cols.minStock, "Seuil alerte");
+        const barcode = cell(row, cols.barcode) || null;
+        if (barcode && barcode.length > 100)
+          throw new Error("Code-barres trop long (100 max).");
+
+        // Unité : symbole ou nom connu ; cellule vide → unité de base du tenant.
+        let unitId: string | null = null;
+        const unitRaw = cell(row, cols.unit).toLowerCase();
+        if (unitRaw) {
+          const found = units.find(
+            (un) =>
+              un.symbol.toLowerCase() === unitRaw ||
+              un.name.toLowerCase() === unitRaw,
+          );
+          if (!found) {
+            throw new Error(
+              `Unité inconnue « ${cell(row, cols.unit)} ». Connues : ${units.map((un) => un.symbol).join(", ")}.`,
+            );
+          }
+          unitId = found.id;
+        } else if (baseUnit) unitId = baseUnit.id;
+
+        // Catégorie : retrouvée (casse indifférente) ou créée.
+        let categoryId: string | null = null;
+        const catRaw = cell(row, cols.category);
+        if (catRaw) {
+          const existing = await query<{ id: string }>(
+            "SELECT id FROM categories WHERE tenant_id=$1 AND lower(name)=lower($2)",
+            [u.tenantId, catRaw],
+          );
+          if (existing.rows[0]) categoryId = existing.rows[0].id;
+          else {
+            const ins = await query<{ id: string }>(
+              "INSERT INTO categories (tenant_id, name) VALUES ($1,$2) RETURNING id",
+              [u.tenantId, catRaw],
+            );
+            categoryId = ins.rows[0]!.id;
+          }
+        }
+
+        // Produit existant : code-barres prioritaire, sinon nom (casse indifférente, non archivé).
+        let product = null as null | {
+          id: string;
+          name: string;
+          barcode: string | null;
+        };
+        if (barcode) {
+          const r = await query<{
+            id: string;
+            name: string;
+            barcode: string | null;
+          }>(
+            "SELECT id, name, barcode FROM products WHERE tenant_id=$1 AND barcode=$2 AND archived_at IS NULL",
+            [u.tenantId, barcode],
+          );
+          product = r.rows[0] ?? null;
+        }
+        if (!product) {
+          const r = await query<{
+            id: string;
+            name: string;
+            barcode: string | null;
+          }>(
+            "SELECT id, name, barcode FROM products WHERE tenant_id=$1 AND lower(name)=lower($2) AND archived_at IS NULL LIMIT 1",
+            [u.tenantId, name],
+          );
+          product = r.rows[0] ?? null;
+        }
+
+        if (product) {
+          // Le code-barres du CSV ne doit pas entrer en conflit avec un AUTRE produit.
+          if (barcode && product.barcode !== barcode) {
+            const clash = await query<{ name: string }>(
+              "SELECT name FROM products WHERE tenant_id=$1 AND barcode=$2 AND id<>$3 AND archived_at IS NULL",
+              [u.tenantId, barcode, product.id],
+            );
+            if (clash.rows[0])
+              throw new Error(
+                `Code-barres ${barcode} déjà utilisé par « ${clash.rows[0].name} ».`,
+              );
+          }
+          await query(
+            `UPDATE products SET
+               purchase_price = COALESCE($3, purchase_price),
+               selling_price  = COALESCE($4, selling_price),
+               min_stock_level= COALESCE($5, min_stock_level),
+               category_id    = COALESCE($6, category_id),
+               unit_id        = COALESCE($7, unit_id),
+               barcode        = COALESCE($8, barcode),
+               updated_at     = now()
+             WHERE id=$1 AND tenant_id=$2`,
+            [
+              product.id,
+              u.tenantId,
+              purchasePrice,
+              sellingPrice,
+              minStock,
+              categoryId,
+              unitId,
+              barcode,
+            ],
+          );
+          updated += 1;
+        } else {
+          await query(
+            `INSERT INTO products (tenant_id, name, barcode, purchase_price, selling_price, min_stock_level, category_id, unit_id)
+             VALUES ($1,$2,$3,COALESCE($4,0),COALESCE($5,0),COALESCE($6,0),$7,$8)`,
+            [
+              u.tenantId,
+              name,
+              barcode,
+              purchasePrice,
+              sellingPrice,
+              minStock,
+              categoryId,
+              unitId,
+            ],
+          );
+          created += 1;
+        }
+      } catch (err) {
+        if (errors.length < 100) {
+          errors.push({
+            ligne,
+            message: err instanceof Error ? err.message : "Erreur inconnue",
+          });
+        }
+      }
+    }
+
+    await writeAudit({
+      tenantId: u.tenantId,
+      userId: u.id,
+      userName: u.name,
+      action: "IMPORT",
+      entity: "product",
+      details: `Import CSV : ${created} créés, ${updated} mis à jour, ${errors.length} erreur(s) sur ${dataRows.length} ligne(s).`,
+    });
+    res.json({ created, updated, errors, total: dataRows.length });
   }),
 );
 
 // ============================ DÉTAIL (variantes, lots, niveaux) =============
 router.get(
-  '/:id',
+  "/:id",
   validateParams(uuidParam),
   h(async (req, res) => {
     const t = (req as AuthRequest).user.tenantId;
@@ -146,9 +438,12 @@ router.get(
         WHERE p.id=$1 AND p.tenant_id=$2`,
       [req.params.id!, t],
     );
-    if (!p.rows[0]) throw HttpError.notFound('Produit introuvable.');
+    if (!p.rows[0]) throw HttpError.notFound("Produit introuvable.");
     const [variants, batches, levels, movements] = await Promise.all([
-      query('SELECT * FROM product_variants WHERE product_id=$1 ORDER BY name', [req.params.id]),
+      query(
+        "SELECT * FROM product_variants WHERE product_id=$1 ORDER BY name",
+        [req.params.id],
+      ),
       query(
         `SELECT b.*, s.name AS supplier_name, d.name AS depot_name FROM stock_batches b
            LEFT JOIN suppliers s ON s.id=b.supplier_id LEFT JOIN depots d ON d.id=b.depot_id
@@ -211,48 +506,102 @@ const productInput = z.object({
 });
 
 router.post(
-  '/',
+  "/",
   ...adminWrite,
   validateBody(productInput),
   h(async (req, res) => {
     const u = (req as AuthRequest).user;
     const b = req.body as z.infer<typeof productInput>;
     if (b.hasVariants && b.variants.length === 0) {
-      throw HttpError.badRequest('VARIANTS_REQUIRED', 'Déclarez au moins une variante ou désactivez hasVariants.');
+      throw HttpError.badRequest(
+        "VARIANTS_REQUIRED",
+        "Déclarez au moins une variante ou désactivez hasVariants.",
+      );
     }
     const created = await withTransaction(async (client) => {
       const r = await client.query(
         `INSERT INTO products (tenant_id, name, description, category_id, barcode, purchase_price, selling_price, min_stock_level, unit_id, has_variants)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
-        [u.tenantId, b.name, b.description ?? null, b.categoryId ?? null, b.barcode ?? null,
-         b.purchasePrice, b.sellingPrice, b.minStockLevel, b.unitId ?? null, b.hasVariants],
+        [
+          u.tenantId,
+          b.name,
+          b.description ?? null,
+          b.categoryId ?? null,
+          b.barcode ?? null,
+          b.purchasePrice,
+          b.sellingPrice,
+          b.minStockLevel,
+          b.unitId ?? null,
+          b.hasVariants,
+        ],
       );
       const product = r.rows[0];
       for (const v of b.variants) {
         await client.query(
           `INSERT INTO product_variants (product_id, name, sku, barcode, additional_price, attributes)
            VALUES ($1,$2,$3,$4,$5,$6)`,
-          [product.id, v.name, v.sku ?? null, v.barcode ?? null, v.additionalPrice, JSON.stringify(v.attributes)],
+          [
+            product.id,
+            v.name,
+            v.sku ?? null,
+            v.barcode ?? null,
+            v.additionalPrice,
+            JSON.stringify(v.attributes),
+          ],
         );
       }
       if (b.initialStock && b.initialStock.quantity > 0) {
-        const depotOk = await client.query('SELECT 1 FROM depots WHERE id=$1 AND tenant_id=$2', [b.initialStock.depotId, u.tenantId]);
-        if (!depotOk.rows[0]) throw HttpError.badRequest('DEPOT_UNKNOWN', 'Dépôt du stock initial introuvable.');
-        const scope = { tenantId: u.tenantId, depotId: b.initialStock.depotId, productId: product.id, variantId: null };
+        const depotOk = await client.query(
+          "SELECT 1 FROM depots WHERE id=$1 AND tenant_id=$2",
+          [b.initialStock.depotId, u.tenantId],
+        );
+        if (!depotOk.rows[0])
+          throw HttpError.badRequest(
+            "DEPOT_UNKNOWN",
+            "Dépôt du stock initial introuvable.",
+          );
+        const scope = {
+          tenantId: u.tenantId,
+          depotId: b.initialStock.depotId,
+          productId: product.id,
+          variantId: null,
+        };
         const lvl = await increaseLevel(client, scope, b.initialStock.quantity);
         if (b.initialStock.batchNumber || b.initialStock.expiryDate) {
           await client.query(
             `INSERT INTO stock_batches (product_id, depot_id, batch_number, quantity, expiry_date)
              VALUES ($1,$2,$3,$4,$5)`,
-            [product.id, b.initialStock.depotId, b.initialStock.batchNumber ?? 'INITIAL', b.initialStock.quantity, b.initialStock.expiryDate ?? null],
+            [
+              product.id,
+              b.initialStock.depotId,
+              b.initialStock.batchNumber ?? "INITIAL",
+              b.initialStock.quantity,
+              b.initialStock.expiryDate ?? null,
+            ],
           );
         }
         await recordMovement(client, {
-          ...scope, userId: u.id, type: 'IN', quantity: b.initialStock.quantity,
-          previousStock: lvl.previous, newStock: lvl.next, reason: 'Stock initial',
+          ...scope,
+          userId: u.id,
+          type: "IN",
+          quantity: b.initialStock.quantity,
+          previousStock: lvl.previous,
+          newStock: lvl.next,
+          reason: "Stock initial",
         });
       }
-      await writeAudit({ tenantId: u.tenantId, userId: u.id, userName: u.name, action: 'CREATE', entity: 'product', entityId: product.id, newState: product }, client);
+      await writeAudit(
+        {
+          tenantId: u.tenantId,
+          userId: u.id,
+          userName: u.name,
+          action: "CREATE",
+          entity: "product",
+          entityId: product.id,
+          newState: product,
+        },
+        client,
+      );
       return product;
     });
     res.status(201).json(created);
@@ -261,14 +610,19 @@ router.post(
 
 // ============================ MISE À JOUR COMPLÈTE ==========================
 router.patch(
-  '/:id',
+  "/:id",
   ...adminWrite,
   validateParams(uuidParam),
-  validateBody(productInput.omit({ initialStock: true, variants: true }).partial()),
+  validateBody(
+    productInput.omit({ initialStock: true, variants: true }).partial(),
+  ),
   h(async (req, res) => {
     const u = (req as AuthRequest).user;
-    const prev = await query('SELECT * FROM products WHERE id=$1 AND tenant_id=$2', [req.params.id!, u.tenantId]);
-    if (!prev.rows[0]) throw HttpError.notFound('Produit introuvable.');
+    const prev = await query(
+      "SELECT * FROM products WHERE id=$1 AND tenant_id=$2",
+      [req.params.id!, u.tenantId],
+    );
+    if (!prev.rows[0]) throw HttpError.notFound("Produit introuvable.");
     const b = req.body;
     const r = await query(
       `UPDATE products SET name=COALESCE($3,name), description=COALESCE($4,description),
@@ -277,71 +631,121 @@ router.patch(
               min_stock_level=COALESCE($9,min_stock_level), unit_id=COALESCE($10,unit_id),
               has_variants=COALESCE($11,has_variants), updated_at=now()
         WHERE id=$1 AND tenant_id=$2 RETURNING *`,
-      [req.params.id!, u.tenantId, b.name ?? null, b.description ?? null, b.categoryId ?? null,
-       b.barcode ?? null, b.purchasePrice ?? null, b.sellingPrice ?? null, b.minStockLevel ?? null,
-       b.unitId ?? null, b.hasVariants ?? null],
+      [
+        req.params.id!,
+        u.tenantId,
+        b.name ?? null,
+        b.description ?? null,
+        b.categoryId ?? null,
+        b.barcode ?? null,
+        b.purchasePrice ?? null,
+        b.sellingPrice ?? null,
+        b.minStockLevel ?? null,
+        b.unitId ?? null,
+        b.hasVariants ?? null,
+      ],
     );
-    await writeAudit({ tenantId: u.tenantId, userId: u.id, userName: u.name, action: 'UPDATE', entity: 'product', entityId: req.params.id!, previousState: prev.rows[0], newState: r.rows[0] });
+    await writeAudit({
+      tenantId: u.tenantId,
+      userId: u.id,
+      userName: u.name,
+      action: "UPDATE",
+      entity: "product",
+      entityId: req.params.id!,
+      previousState: prev.rows[0],
+      newState: r.rows[0],
+    });
     res.json(r.rows[0]);
   }),
 );
 
 // ============================ ARCHIVAGE (soft-delete, DAT-05) ===============
 router.post(
-  '/:id/archive',
+  "/:id/archive",
   ...adminWrite,
   validateParams(uuidParam),
   h(async (req, res) => {
     const u = (req as AuthRequest).user;
     const r = await query(
-      'UPDATE products SET archived_at=now(), updated_at=now() WHERE id=$1 AND tenant_id=$2 AND archived_at IS NULL RETURNING id, name',
+      "UPDATE products SET archived_at=now(), updated_at=now() WHERE id=$1 AND tenant_id=$2 AND archived_at IS NULL RETURNING id, name",
       [req.params.id!, u.tenantId],
     );
-    if (!r.rows[0]) throw HttpError.notFound('Produit introuvable ou déjà archivé.');
-    await writeAudit({ tenantId: u.tenantId, userId: u.id, userName: u.name, action: 'ARCHIVE', entity: 'product', entityId: req.params.id!, newState: r.rows[0] });
-    res.json({ message: `« ${r.rows[0].name} » archivé. L'historique des ventes est conservé.` });
+    if (!r.rows[0])
+      throw HttpError.notFound("Produit introuvable ou déjà archivé.");
+    await writeAudit({
+      tenantId: u.tenantId,
+      userId: u.id,
+      userName: u.name,
+      action: "ARCHIVE",
+      entity: "product",
+      entityId: req.params.id!,
+      newState: r.rows[0],
+    });
+    res.json({
+      message: `« ${r.rows[0].name} » archivé. L'historique des ventes est conservé.`,
+    });
   }),
 );
 
 router.post(
-  '/:id/restore',
+  "/:id/restore",
   ...adminWrite,
   validateParams(uuidParam),
   h(async (req, res) => {
     const u = (req as AuthRequest).user;
     const r = await query(
-      'UPDATE products SET archived_at=NULL, updated_at=now() WHERE id=$1 AND tenant_id=$2 AND archived_at IS NOT NULL RETURNING id, name',
+      "UPDATE products SET archived_at=NULL, updated_at=now() WHERE id=$1 AND tenant_id=$2 AND archived_at IS NOT NULL RETURNING id, name",
       [req.params.id!, u.tenantId],
     );
-    if (!r.rows[0]) throw HttpError.notFound('Produit archivé introuvable.');
-    await writeAudit({ tenantId: u.tenantId, userId: u.id, userName: u.name, action: 'RESTORE', entity: 'product', entityId: req.params.id!, newState: r.rows[0] });
+    if (!r.rows[0]) throw HttpError.notFound("Produit archivé introuvable.");
+    await writeAudit({
+      tenantId: u.tenantId,
+      userId: u.id,
+      userName: u.name,
+      action: "RESTORE",
+      entity: "product",
+      entityId: req.params.id!,
+      newState: r.rows[0],
+    });
     res.json({ message: `« ${r.rows[0].name} » restauré.` });
   }),
 );
 
 // ============================ VARIANTES =====================================
 router.post(
-  '/:id/variants',
+  "/:id/variants",
   ...adminWrite,
   validateParams(uuidParam),
   validateBody(variantInput),
   h(async (req, res) => {
     const u = (req as AuthRequest).user;
-    const owner = await query('SELECT id FROM products WHERE id=$1 AND tenant_id=$2', [req.params.id!, u.tenantId]);
-    if (!owner.rows[0]) throw HttpError.notFound('Produit introuvable.');
+    const owner = await query(
+      "SELECT id FROM products WHERE id=$1 AND tenant_id=$2",
+      [req.params.id!, u.tenantId],
+    );
+    if (!owner.rows[0]) throw HttpError.notFound("Produit introuvable.");
     const b = req.body;
     const r = await query(
       `INSERT INTO product_variants (product_id, name, sku, barcode, additional_price, attributes)
        VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
-      [req.params.id!, b.name, b.sku ?? null, b.barcode ?? null, b.additionalPrice, JSON.stringify(b.attributes)],
+      [
+        req.params.id!,
+        b.name,
+        b.sku ?? null,
+        b.barcode ?? null,
+        b.additionalPrice,
+        JSON.stringify(b.attributes),
+      ],
     );
-    await query('UPDATE products SET has_variants=true WHERE id=$1', [req.params.id]);
+    await query("UPDATE products SET has_variants=true WHERE id=$1", [
+      req.params.id,
+    ]);
     res.status(201).json(r.rows[0]);
   }),
 );
 
 router.patch(
-  '/variants/:id',
+  "/variants/:id",
   ...adminWrite,
   validateParams(uuidParam),
   validateBody(variantInput.partial()),
@@ -354,16 +758,23 @@ router.patch(
          FROM products p
         WHERE v.id=$1 AND v.product_id=p.id AND p.tenant_id=$7
         RETURNING v.*`,
-      [req.params.id!, b.name ?? null, b.sku ?? null, b.barcode ?? null, b.additionalPrice ?? null,
-       b.attributes ? JSON.stringify(b.attributes) : null, u.tenantId],
+      [
+        req.params.id!,
+        b.name ?? null,
+        b.sku ?? null,
+        b.barcode ?? null,
+        b.additionalPrice ?? null,
+        b.attributes ? JSON.stringify(b.attributes) : null,
+        u.tenantId,
+      ],
     );
-    if (!r.rows[0]) throw HttpError.notFound('Variante introuvable.');
+    if (!r.rows[0]) throw HttpError.notFound("Variante introuvable.");
     res.json(r.rows[0]);
   }),
 );
 
 router.delete(
-  '/variants/:id',
+  "/variants/:id",
   ...adminWrite,
   validateParams(uuidParam),
   h(async (req, res) => {
@@ -373,7 +784,7 @@ router.delete(
         WHERE v.id=$1 AND p.tenant_id=$2`,
       [req.params.id!, u.tenantId],
     );
-    if (!v.rows[0]) throw HttpError.notFound('Variante introuvable.');
+    if (!v.rows[0]) throw HttpError.notFound("Variante introuvable.");
     const used = await query(
       `SELECT
          (SELECT COUNT(*) FROM sale_items si JOIN sales s ON s.id=si.sale_id WHERE si.variant_id=$1 AND s.tenant_id=$2)::int AS sales,
@@ -381,12 +792,21 @@ router.delete(
       [req.params.id!, u.tenantId],
     );
     if ((used.rows[0]!.sales ?? 0) > 0 || (used.rows[0]!.stock ?? 0) > 0) {
-      throw HttpError.conflict('VARIANT_IN_USE', 'Variante liée à des ventes ou du stock : suppression impossible.');
+      throw HttpError.conflict(
+        "VARIANT_IN_USE",
+        "Variante liée à des ventes ou du stock : suppression impossible.",
+      );
     }
-    await query('DELETE FROM product_variants WHERE id=$1', [req.params.id!]);
-    const remaining = await query('SELECT COUNT(*)::int AS n FROM product_variants WHERE product_id=$1', [v.rows[0].product_id]);
-    if (remaining.rows[0]!.n === 0) await query('UPDATE products SET has_variants=false WHERE id=$1', [v.rows[0].product_id]);
-    res.json({ message: 'Variante supprimée.' });
+    await query("DELETE FROM product_variants WHERE id=$1", [req.params.id!]);
+    const remaining = await query(
+      "SELECT COUNT(*)::int AS n FROM product_variants WHERE product_id=$1",
+      [v.rows[0].product_id],
+    );
+    if (remaining.rows[0]!.n === 0)
+      await query("UPDATE products SET has_variants=false WHERE id=$1", [
+        v.rows[0].product_id,
+      ]);
+    res.json({ message: "Variante supprimée." });
   }),
 );
 
@@ -401,26 +821,37 @@ const batchInput = z.object({
 });
 
 router.post(
-  '/:id/batches',
+  "/:id/batches",
   ...adminWrite,
   validateParams(uuidParam),
   validateBody(batchInput),
   h(async (req, res) => {
     const u = (req as AuthRequest).user;
     const b = req.body as z.infer<typeof batchInput>;
-    const owner = await query('SELECT id FROM products WHERE id=$1 AND tenant_id=$2', [req.params.id!, u.tenantId]);
-    if (!owner.rows[0]) throw HttpError.notFound('Produit introuvable.');
+    const owner = await query(
+      "SELECT id FROM products WHERE id=$1 AND tenant_id=$2",
+      [req.params.id!, u.tenantId],
+    );
+    if (!owner.rows[0]) throw HttpError.notFound("Produit introuvable.");
     const r = await query(
       `INSERT INTO stock_batches (product_id, depot_id, batch_number, quantity, expiry_date, received_date, supplier_id)
        VALUES ($1,$2,$3,$4,$5,COALESCE($6::date, CURRENT_DATE),$7) RETURNING *`,
-      [req.params.id!, b.depotId, b.batchNumber, b.quantity, b.expiryDate ?? null, b.receivedDate ?? null, b.supplierId ?? null],
+      [
+        req.params.id!,
+        b.depotId,
+        b.batchNumber,
+        b.quantity,
+        b.expiryDate ?? null,
+        b.receivedDate ?? null,
+        b.supplierId ?? null,
+      ],
     );
     res.status(201).json(r.rows[0]);
   }),
 );
 
 router.patch(
-  '/batches/:id',
+  "/batches/:id",
   ...adminWrite,
   validateParams(uuidParam),
   validateBody(batchInput.partial().omit({ depotId: true })),
@@ -432,15 +863,22 @@ router.patch(
               expiry_date=COALESCE($4,expiry_date), supplier_id=COALESCE($5,supplier_id)
          FROM products p
         WHERE sb.id=$1 AND sb.product_id=p.id AND p.tenant_id=$6 RETURNING sb.*`,
-      [req.params.id!, b.batchNumber ?? null, b.quantity ?? null, b.expiryDate ?? null, b.supplierId ?? null, u.tenantId],
+      [
+        req.params.id!,
+        b.batchNumber ?? null,
+        b.quantity ?? null,
+        b.expiryDate ?? null,
+        b.supplierId ?? null,
+        u.tenantId,
+      ],
     );
-    if (!r.rows[0]) throw HttpError.notFound('Lot introuvable.');
+    if (!r.rows[0]) throw HttpError.notFound("Lot introuvable.");
     res.json(r.rows[0]);
   }),
 );
 
 router.delete(
-  '/batches/:id',
+  "/batches/:id",
   ...adminWrite,
   validateParams(uuidParam),
   h(async (req, res) => {
@@ -450,12 +888,15 @@ router.delete(
         WHERE sb.id=$1 AND p.tenant_id=$2`,
       [req.params.id!, u.tenantId],
     );
-    if (!b.rows[0]) throw HttpError.notFound('Lot introuvable.');
+    if (!b.rows[0]) throw HttpError.notFound("Lot introuvable.");
     if (Number(b.rows[0].quantity) !== 0) {
-      throw HttpError.conflict('BATCH_NOT_EMPTY', 'Seul un lot épuisé (quantité 0) peut être supprimé.');
+      throw HttpError.conflict(
+        "BATCH_NOT_EMPTY",
+        "Seul un lot épuisé (quantité 0) peut être supprimé.",
+      );
     }
-    await query('DELETE FROM stock_batches WHERE id=$1', [req.params.id!]);
-    res.json({ message: 'Lot supprimé.' });
+    await query("DELETE FROM stock_batches WHERE id=$1", [req.params.id!]);
+    res.json({ message: "Lot supprimé." });
   }),
 );
 

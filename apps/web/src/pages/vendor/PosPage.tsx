@@ -5,17 +5,29 @@
  *  - paiements Espèces / MTN MoMo / Orange Money ;
  *  - mode hors-ligne complet : vente mise en file (clientSaleId) puis rejeu
  *    idempotent automatique (serveur = autorité finale pour prix et stock). */
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { Badge, Button, Field, Input, Modal, Select, Spinner } from '../../components/ui';
-import { cartTotal, changeDue, makeLine, type CartLine } from '../../lib/cart';
-import { formatDateTime, formatMoney, formatQty } from '../../lib/format';
-import { ApiError, get, post } from '../../lib/http';
-import { enqueueSale } from '../../lib/offline/outbox';
-import { installAutoSync } from '../../lib/offline/sync';
-import { usePosBootstrap, type BootstrapStatus } from '../../lib/pos';
-import { useOnlineStatus } from '../../components/Shell';
-import { useToast } from '../../store/toast';
-import type { PaymentMethod, ReceiptData } from '../../lib/types';
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  Badge,
+  Button,
+  Field,
+  Input,
+  Modal,
+  Select,
+  Spinner,
+} from "../../components/ui";
+import {
+  CameraScanner,
+  cameraScanSupported,
+} from "../../components/CameraScanner";
+import { cartTotal, changeDue, makeLine, type CartLine } from "../../lib/cart";
+import { formatDateTime, formatMoney, formatQty } from "../../lib/format";
+import { ApiError, get, post } from "../../lib/http";
+import { enqueueSale } from "../../lib/offline/outbox";
+import { installAutoSync } from "../../lib/offline/sync";
+import { usePosBootstrap, type BootstrapStatus } from "../../lib/pos";
+import { useOnlineStatus } from "../../components/Shell";
+import { useToast } from "../../store/toast";
+import type { PaymentMethod, ReceiptData } from "../../lib/types";
 
 /* ------------------------------ Types locaux ------------------------------- */
 interface SoldState {
@@ -30,9 +42,9 @@ interface SoldState {
 }
 
 const METHODS: Array<{ id: PaymentMethod; label: string; icon: string }> = [
-  { id: 'CASH', label: 'Espèces', icon: '💵' },
-  { id: 'MTN_MOMO', label: 'MTN MoMo', icon: '🟡' },
-  { id: 'ORANGE_MONEY', label: 'Orange Money', icon: '🟠' },
+  { id: "CASH", label: "Espèces", icon: "💵" },
+  { id: "MTN_MOMO", label: "MTN MoMo", icon: "🟡" },
+  { id: "ORANGE_MONEY", label: "Orange Money", icon: "🟠" },
 ];
 
 /* ================================ COMPOSANT ================================ */
@@ -43,13 +55,15 @@ export default function PosPage() {
   const boot: BootstrapStatus = usePosBootstrap(depotId);
   const b = boot.data;
 
-  const [search, setSearch] = useState('');
-  const [category, setCategory] = useState('');
+  const [search, setSearch] = useState("");
+  const [category, setCategory] = useState("");
   const [cart, setCart] = useState<CartLine[]>([]);
   const [variantPick, setVariantPick] = useState<string | null>(null); // productId
   const [payOpen, setPayOpen] = useState(false);
   const [sold, setSold] = useState<SoldState | null>(null);
+  const [scanOpen, setScanOpen] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
+  const canCameraScan = useMemo(() => cameraScanSupported(), []);
 
   // Auto-sync du file d'attente au retour réseau
   useEffect(() => installAutoSync(), []);
@@ -71,7 +85,10 @@ export default function PosPage() {
     return m;
   }, [b]);
 
-  const unitById = useMemo(() => new Map((b?.units ?? []).map((u) => [u.id, u])), [b]);
+  const unitById = useMemo(
+    () => new Map((b?.units ?? []).map((u) => [u.id, u])),
+    [b],
+  );
 
   const filtered = useMemo(() => {
     const products = b?.products ?? [];
@@ -83,13 +100,21 @@ export default function PosPage() {
         (p) =>
           p.name.toLowerCase().includes(term) ||
           p.barcode === term ||
-          p.variants.some((v) => v.barcode === term || v.name.toLowerCase().includes(term)),
+          p.variants.some(
+            (v) => v.barcode === term || v.name.toLowerCase().includes(term),
+          ),
       );
     }
     return list.slice(0, 60);
   }, [b, search, category]);
 
-  const favorites = useMemo(() => (b?.products ?? []).filter((p) => b?.favorites.includes(p.id)).slice(0, 12), [b]);
+  const favorites = useMemo(
+    () =>
+      (b?.products ?? [])
+        .filter((p) => b?.favorites.includes(p.id))
+        .slice(0, 12),
+    [b],
+  );
 
   const total = cartTotal(cart);
 
@@ -98,8 +123,10 @@ export default function PosPage() {
     if (!b) return;
     const p = b.products.find((x) => x.id === productId);
     if (!p) return;
-    const v = variantId ? p.variants.find((x) => x.id === variantId) ?? null : null;
-    const unit = p.unit_id ? unitById.get(p.unit_id) ?? null : null;
+    const v = variantId
+      ? (p.variants.find((x) => x.id === variantId) ?? null)
+      : null;
+    const unit = p.unit_id ? (unitById.get(p.unit_id) ?? null) : null;
     const line = makeLine({
       product: {
         id: p.id,
@@ -110,15 +137,26 @@ export default function PosPage() {
         unitSymbol: p.unit_symbol,
         barcode: p.barcode,
       },
-      variant: v ? { id: v.id, name: v.name, additionalPrice: v.additionalPrice, barcode: v.barcode } : null,
-      unit: unit ? { id: unit.id, symbol: unit.symbol, baseValue: unit.base_value } : null,
+      variant: v
+        ? {
+            id: v.id,
+            name: v.name,
+            additionalPrice: v.additionalPrice,
+            barcode: v.barcode,
+          }
+        : null,
+      unit: unit
+        ? { id: unit.id, symbol: unit.symbol, baseValue: unit.base_value }
+        : null,
       quantity: 1,
     });
     setCart((prev) => {
       const existing = prev.find((l) => l.key === line.key);
       if (existing) {
         // Incrémente via makeLine pour recalculer les totaux
-        return prev.map((l) => (l.key === line.key ? makeLine({ ...l, quantity: l.quantity + 1 }) : l));
+        return prev.map((l) =>
+          l.key === line.key ? makeLine({ ...l, quantity: l.quantity + 1 }) : l,
+        );
       }
       return [...prev, line];
     });
@@ -133,7 +171,9 @@ export default function PosPage() {
   };
 
   const updateLine = (key: string, patchFn: (l: CartLine) => CartLine) =>
-    setCart((prev) => prev.map((l) => (l.key === key ? makeLine(patchFn(l)) : l)));
+    setCart((prev) =>
+      prev.map((l) => (l.key === key ? makeLine(patchFn(l)) : l)),
+    );
 
   const setQty = (key: string, qty: number) =>
     updateLine(key, (l) => ({ ...l, quantity: Math.max(1, qty) }));
@@ -141,41 +181,73 @@ export default function PosPage() {
   const setUnit = (key: string, unitId: string) =>
     updateLine(key, (l) => {
       const u = unitById.get(unitId);
-      return { ...l, unit: u ? { id: u.id, symbol: u.symbol, baseValue: u.base_value } : null };
+      return {
+        ...l,
+        unit: u
+          ? { id: u.id, symbol: u.symbol, baseValue: u.base_value }
+          : null,
+      };
     });
 
   const setDiscount = (key: string, pct: number) =>
-    updateLine(key, (l) => ({ ...l, discountPct: Math.min(Math.max(pct, 0), 100) }));
+    updateLine(key, (l) => ({
+      ...l,
+      discountPct: Math.min(Math.max(pct, 0), 100),
+    }));
 
-  const removeLine = (key: string) => setCart((prev) => prev.filter((l) => l.key !== key));
+  const removeLine = (key: string) =>
+    setCart((prev) => prev.filter((l) => l.key !== key));
+
+  /** Ajout au panier par code-barres exact (produit ou variante) — chemin
+   *  commun à la douchette USB, à la saisie Entrée et au scanner caméra. */
+  const addByBarcode = (code: string): boolean => {
+    if (!code || !b) return false;
+    const byProduct = b.products.find((p) => p.barcode === code);
+    if (byProduct) {
+      pickProduct(byProduct.id);
+      return true;
+    }
+    for (const p of b.products) {
+      const v = p.variants.find((x) => x.barcode === code);
+      if (v) {
+        addToCart(p.id, v.id);
+        return true;
+      }
+    }
+    return false;
+  };
 
   // Recherche « douchette » : un code-barres exact valide ajoute directement au panier
   const onSearchKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key !== 'Enter') return;
+    if (e.key !== "Enter") return;
     const term = search.trim();
     if (!term || !b) return;
-    const byProduct = b.products.find((p) => p.barcode === term);
-    if (byProduct) {
-      pickProduct(byProduct.id);
-      setSearch('');
+    if (addByBarcode(term)) {
+      setSearch("");
       return;
-    }
-    for (const p of b.products) {
-      const v = p.variants.find((x) => x.barcode === term);
-      if (v) {
-        addToCart(p.id, v.id);
-        setSearch('');
-        return;
-      }
     }
     if (filtered.length === 1) {
       pickProduct(filtered[0]!.id);
-      setSearch('');
+      setSearch("");
     }
   };
 
+  // Résultat du scanner caméra : même comportement que la douchette.
+  const onCameraDetect = (code: string) => {
+    setScanOpen(false);
+    if (!addByBarcode(code)) {
+      show(`Aucun produit ne correspond au code « ${code} ».`, "error");
+      return;
+    }
+    show("Produit ajouté au panier.", "success");
+  };
+
   /* ------------------------------- Validation ------------------------------ */
-  const finishSale = async (method: PaymentMethod, received: number | null, reference: string | null) => {
+  const finishSale = async (
+    method: PaymentMethod,
+    received: number | null,
+    reference: string | null,
+  ) => {
     if (!b || cart.length === 0) return;
     const clientSaleId = crypto.randomUUID();
     const payload = {
@@ -194,19 +266,36 @@ export default function PosPage() {
       amountReceived: received ?? undefined,
     };
     const linesSnapshot = cart.map((l) => ({
-      label: `${l.product.name}${l.variant ? ` · ${l.variant.name}` : ''}`,
+      label: `${l.product.name}${l.variant ? ` · ${l.variant.name}` : ""}`,
       qty: l.quantity,
-      unit: l.unit?.symbol ?? l.product.unitSymbol ?? '',
+      unit: l.unit?.symbol ?? l.product.unitSymbol ?? "",
       total: l.lineTotal,
     }));
     const at = new Date().toISOString();
 
     const offlineFallback = async () => {
-      await enqueueSale({ clientSaleId, payload, label: `Ticket du ${new Date(at).toLocaleString('fr-FR')}`, total });
-      setSold({ saleId: null, total, received, method, reference, offline: true, lines: linesSnapshot, at });
+      await enqueueSale({
+        clientSaleId,
+        payload,
+        label: `Ticket du ${new Date(at).toLocaleString("fr-FR")}`,
+        total,
+      });
+      setSold({
+        saleId: null,
+        total,
+        received,
+        method,
+        reference,
+        offline: true,
+        lines: linesSnapshot,
+        at,
+      });
       setCart([]);
       setPayOpen(false);
-      show('Hors-ligne : vente enregistrée localement, synchronisation automatique au retour du réseau.', 'info');
+      show(
+        "Hors-ligne : vente enregistrée localement, synchronisation automatique au retour du réseau.",
+        "info",
+      );
     };
 
     if (!online) {
@@ -214,7 +303,10 @@ export default function PosPage() {
       return;
     }
     try {
-      const res = await post<{ sale: { id: string; total_amount: number } }>('/sales', payload);
+      const res = await post<{ sale: { id: string; total_amount: number } }>(
+        "/sales",
+        payload,
+      );
       setSold({
         saleId: res.sale.id,
         total: Number(res.sale.total_amount),
@@ -231,7 +323,7 @@ export default function PosPage() {
       if (e instanceof ApiError && e.status === 0) {
         await offlineFallback();
       } else {
-        show(e instanceof Error ? e.message : 'Vente refusée', 'error');
+        show(e instanceof Error ? e.message : "Vente refusée", "error");
       }
     }
   };
@@ -239,18 +331,23 @@ export default function PosPage() {
   /* ================================== RENDU ================================= */
   if (boot.loading) {
     return (
-      <div className="center" style={{ minHeight: '60vh' }}>
+      <div className="center" style={{ minHeight: "60vh" }}>
         <Spinner label="Chargement du catalogue de caisse…" />
       </div>
     );
   }
-  if (boot.error === 'network') {
+  if (boot.error === "network") {
     return (
       <div className="wrap">
         <div className="empty">
-          <span className="emoji" aria-hidden>📡</span>
+          <span className="emoji" aria-hidden>
+            📡
+          </span>
           <h3>Catalogue indisponible</h3>
-          <p>Connectez-vous au réseau au moins une fois pour charger le catalogue de ce dépôt, puis la caisse fonctionnera hors-ligne.</p>
+          <p>
+            Connectez-vous au réseau au moins une fois pour charger le catalogue
+            de ce dépôt, puis la caisse fonctionnera hors-ligne.
+          </p>
           <Button onClick={() => window.location.reload()}>Réessayer</Button>
         </div>
       </div>
@@ -258,7 +355,15 @@ export default function PosPage() {
   }
 
   if (sold) {
-    return <SaleSuccess sold={sold} onNew={() => { setSold(null); setTimeout(() => searchRef.current?.focus(), 100); }} />;
+    return (
+      <SaleSuccess
+        sold={sold}
+        onNew={() => {
+          setSold(null);
+          setTimeout(() => searchRef.current?.focus(), 100);
+        }}
+      />
+    );
   }
 
   return (
@@ -279,21 +384,51 @@ export default function PosPage() {
               aria-label="Recherche produit ou scan code-barres"
             />
           </div>
+          {canCameraScan ? (
+            <button
+              type="button"
+              className="btn btn-outline"
+              onClick={() => setScanOpen(true)}
+              aria-label="Scanner un code-barres avec la caméra"
+              title="Scanner avec la caméra"
+            >
+              📷
+            </button>
+          ) : null}
           {boot.depots.length > 1 ? (
-            <select className="select" style={{ width: 'auto' }} value={boot.depotId ?? ''} onChange={(e) => setDepotId(e.target.value)} aria-label="Dépôt de vente">
+            <select
+              className="select"
+              style={{ width: "auto" }}
+              value={boot.depotId ?? ""}
+              onChange={(e) => setDepotId(e.target.value)}
+              aria-label="Dépôt de vente"
+            >
               {boot.depots.map((d) => (
-                <option key={d.id} value={d.id}>{d.name}</option>
+                <option key={d.id} value={d.id}>
+                  {d.name}
+                </option>
               ))}
             </select>
           ) : (
-            <Badge>{boot.depots.find((d) => d.id === boot.depotId)?.name ?? 'Dépôt'}</Badge>
+            <Badge>
+              {boot.depots.find((d) => d.id === boot.depotId)?.name ?? "Dépôt"}
+            </Badge>
           )}
         </div>
 
         <div className="chips">
-          <button className={`chip ${category === '' ? 'active' : ''}`} onClick={() => setCategory('')}>Tout</button>
+          <button
+            className={`chip ${category === "" ? "active" : ""}`}
+            onClick={() => setCategory("")}
+          >
+            Tout
+          </button>
           {(b?.categories ?? []).map((c) => (
-            <button key={c.id} className={`chip ${category === c.name ? 'active' : ''}`} onClick={() => setCategory(c.name === category ? '' : c.name)}>
+            <button
+              key={c.id}
+              className={`chip ${category === c.name ? "active" : ""}`}
+              onClick={() => setCategory(c.name === category ? "" : c.name)}
+            >
               {c.name}
             </button>
           ))}
@@ -301,10 +436,27 @@ export default function PosPage() {
 
         {!search && !category && favorites.length > 0 ? (
           <>
-            <h3 className="muted" style={{ margin: '10px 2px 6px', fontSize: '0.82rem', textTransform: 'uppercase', letterSpacing: '0.06em' }}>⭐ Favoris</h3>
+            <h3
+              className="muted"
+              style={{
+                margin: "10px 2px 6px",
+                fontSize: "0.82rem",
+                textTransform: "uppercase",
+                letterSpacing: "0.06em",
+              }}
+            >
+              ⭐ Favoris
+            </h3>
             <div className="pos-grid">
               {favorites.map((p) => (
-                <ProductTile key={`fav-${p.id}`} productId={p.id} name={p.name} price={p.selling_price} stock={stockByProduct.get(p.id) ?? 0} onPick={pickProduct} />
+                <ProductTile
+                  key={`fav-${p.id}`}
+                  productId={p.id}
+                  name={p.name}
+                  price={p.selling_price}
+                  stock={stockByProduct.get(p.id) ?? 0}
+                  onPick={pickProduct}
+                />
               ))}
             </div>
           </>
@@ -312,12 +464,27 @@ export default function PosPage() {
 
         <div className="pos-grid" style={{ marginTop: 10 }}>
           {filtered.map((p) => (
-            <ProductTile key={p.id} productId={p.id} name={p.name} price={p.selling_price} stock={stockByProduct.get(p.id) ?? 0} onPick={pickProduct} />
+            <ProductTile
+              key={p.id}
+              productId={p.id}
+              name={p.name}
+              price={p.selling_price}
+              stock={stockByProduct.get(p.id) ?? 0}
+              onPick={pickProduct}
+            />
           ))}
-          {filtered.length === 0 ? <p className="muted">Aucun produit ne correspond. Essayez un autre terme ou scannez le code-barres.</p> : null}
+          {filtered.length === 0 ? (
+            <p className="muted">
+              Aucun produit ne correspond. Essayez un autre terme ou scannez le
+              code-barres.
+            </p>
+          ) : null}
         </div>
         {boot.fromCache ? (
-          <p className="muted" style={{ fontSize: '0.8rem', marginTop: 8 }}>📴 Catalogue hors-ligne — les stocks affichés datent de la dernière synchronisation.</p>
+          <p className="muted" style={{ fontSize: "0.8rem", marginTop: 8 }}>
+            📴 Catalogue hors-ligne — les stocks affichés datent de la dernière
+            synchronisation.
+          </p>
         ) : null}
       </section>
 
@@ -326,48 +493,117 @@ export default function PosPage() {
         <div className="row-between" style={{ marginBottom: 8 }}>
           <h2 style={{ margin: 0 }}>🧾 Panier</h2>
           {cart.length > 0 ? (
-            <Button variant="ghost" size="sm" onClick={() => setCart([])}>Vider</Button>
+            <Button variant="ghost" size="sm" onClick={() => setCart([])}>
+              Vider
+            </Button>
           ) : null}
         </div>
 
         {cart.length === 0 ? (
-          <div className="empty" style={{ padding: '24px 8px' }}>
-            <span className="emoji" aria-hidden>🛒</span>
+          <div className="empty" style={{ padding: "24px 8px" }}>
+            <span className="emoji" aria-hidden>
+              🛒
+            </span>
             <h3>Panier vide</h3>
-            <p>Touchez un produit ou scannez un code-barres pour commencer la vente.</p>
+            <p>
+              Touchez un produit ou scannez un code-barres pour commencer la
+              vente.
+            </p>
           </div>
         ) : (
           <>
-            <div style={{ flex: 1, overflow: 'auto' }}>
+            <div style={{ flex: 1, overflow: "auto" }}>
               {cart.map((l) => (
                 <div key={l.key} className="cart-line">
                   <div>
                     <div className="name">{l.product.name}</div>
-                    {l.variant ? <div className="muted" style={{ fontSize: '0.8rem' }}>{l.variant.name}</div> : null}
-                    <div className="muted" style={{ fontSize: '0.8rem' }}>
-                      {formatMoney(l.unitPrice)} / {l.unit?.symbol ?? l.product.unitSymbol ?? 'u'}
+                    {l.variant ? (
+                      <div className="muted" style={{ fontSize: "0.8rem" }}>
+                        {l.variant.name}
+                      </div>
+                    ) : null}
+                    <div className="muted" style={{ fontSize: "0.8rem" }}>
+                      {formatMoney(l.unitPrice)} /{" "}
+                      {l.unit?.symbol ?? l.product.unitSymbol ?? "u"}
                     </div>
                     <div className="row" style={{ gap: 6, marginTop: 4 }}>
                       {(b?.units ?? []).length > 1 ? (
-                        <select className="select" style={{ padding: '2px 6px', fontSize: '0.8rem', width: 'auto' }} value={l.unit?.id ?? ''} onChange={(e) => { if (e.target.value) setUnit(l.key, e.target.value); }} aria-label="Unité de vente">
+                        <select
+                          className="select"
+                          style={{
+                            padding: "2px 6px",
+                            fontSize: "0.8rem",
+                            width: "auto",
+                          }}
+                          value={l.unit?.id ?? ""}
+                          onChange={(e) => {
+                            if (e.target.value) setUnit(l.key, e.target.value);
+                          }}
+                          aria-label="Unité de vente"
+                        >
                           {(b?.units ?? []).map((u) => {
                             // Propose l'unité catalogue en tête, puis les dérivées de même famille (facteur multiple)
-                            return <option key={u.id} value={u.id}>{u.symbol}{u.base_value !== 1 ? ` ×${u.base_value}` : ''}</option>;
+                            return (
+                              <option key={u.id} value={u.id}>
+                                {u.symbol}
+                                {u.base_value !== 1 ? ` ×${u.base_value}` : ""}
+                              </option>
+                            );
                           })}
                         </select>
                       ) : null}
-                      <label className="muted" style={{ fontSize: '0.78rem', display: 'flex', alignItems: 'center', gap: 3 }}>
+                      <label
+                        className="muted"
+                        style={{
+                          fontSize: "0.78rem",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 3,
+                        }}
+                      >
                         Remise %
-                        <input style={{ width: 44 }} inputMode="decimal" value={l.discountPct ?? 0} onChange={(e) => setDiscount(l.key, Number(e.target.value.replace(',', '.')) || 0)} aria-label="Remise en pourcentage" />
+                        <input
+                          style={{ width: 44 }}
+                          inputMode="decimal"
+                          value={l.discountPct ?? 0}
+                          onChange={(e) =>
+                            setDiscount(
+                              l.key,
+                              Number(e.target.value.replace(",", ".")) || 0,
+                            )
+                          }
+                          aria-label="Remise en pourcentage"
+                        />
                       </label>
                     </div>
                   </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "flex-end",
+                      gap: 6,
+                    }}
+                  >
                     <div className="amount">{formatMoney(l.lineTotal)}</div>
                     <div className="qty-stepper">
-                      <button onClick={() => (l.quantity <= 1 ? removeLine(l.key) : setQty(l.key, l.quantity - 1))} aria-label="Diminuer">−</button>
+                      <button
+                        onClick={() =>
+                          l.quantity <= 1
+                            ? removeLine(l.key)
+                            : setQty(l.key, l.quantity - 1)
+                        }
+                        aria-label="Diminuer"
+                      >
+                        −
+                      </button>
                       <span>{formatQty(l.quantity)}</span>
-                      <button onClick={() => setQty(l.key, l.quantity + 1)} aria-label="Augmenter">+</button>
+                      <button
+                        onClick={() => setQty(l.key, l.quantity + 1)}
+                        aria-label="Augmenter"
+                      >
+                        +
+                      </button>
                     </div>
                   </div>
                 </div>
@@ -377,16 +613,31 @@ export default function PosPage() {
             <div className="cart-pay">
               <div className="row-between" style={{ marginBottom: 8 }}>
                 <strong>Total</strong>
-                <strong style={{ fontSize: '1.25rem' }}>{formatMoney(total)}</strong>
+                <strong style={{ fontSize: "1.25rem" }}>
+                  {formatMoney(total)}
+                </strong>
               </div>
               <div className="pay-grid">
                 {METHODS.map((m) => (
-                  <Button key={m.id} variant={m.id === 'CASH' ? 'primary' : 'outline'} size="lg" onClick={() => setPayOpen(true)}>
+                  <Button
+                    key={m.id}
+                    variant={m.id === "CASH" ? "primary" : "outline"}
+                    size="lg"
+                    onClick={() => setPayOpen(true)}
+                  >
                     {m.icon} {m.label}
                   </Button>
                 ))}
               </div>
-              {!online ? <p className="muted" style={{ fontSize: '0.8rem', marginTop: 6 }}>📴 Hors-ligne : la vente sera mise en file et synchronisée automatiquement.</p> : null}
+              {!online ? (
+                <p
+                  className="muted"
+                  style={{ fontSize: "0.8rem", marginTop: 6 }}
+                >
+                  📴 Hors-ligne : la vente sera mise en file et synchronisée
+                  automatiquement.
+                </p>
+              ) : null}
             </div>
           </>
         )}
@@ -395,8 +646,12 @@ export default function PosPage() {
       {/* Choix de variante */}
       {variantPick ? (
         <VariantPicker
-          productName={b?.products.find((p) => p.id === variantPick)?.name ?? ''}
-          variants={b?.products.find((p) => p.id === variantPick)?.variants ?? []}
+          productName={
+            b?.products.find((p) => p.id === variantPick)?.name ?? ""
+          }
+          variants={
+            b?.products.find((p) => p.id === variantPick)?.variants ?? []
+          }
           stockByVariant={stockByVariant}
           onPick={(variantId) => addToCart(variantPick, variantId)}
           onClose={() => setVariantPick(null)}
@@ -404,19 +659,56 @@ export default function PosPage() {
       ) : null}
 
       {/* Encaissement */}
-      {payOpen ? <PaymentModal total={total} onClose={() => setPayOpen(false)} onConfirm={finishSale} /> : null}
+      {payOpen ? (
+        <PaymentModal
+          total={total}
+          onClose={() => setPayOpen(false)}
+          onConfirm={finishSale}
+        />
+      ) : null}
+
+      {scanOpen ? (
+        <Modal
+          title="Scanner un code-barres"
+          onClose={() => setScanOpen(false)}
+        >
+          <CameraScanner
+            onDetect={onCameraDetect}
+            onClose={() => setScanOpen(false)}
+          />
+        </Modal>
+      ) : null}
     </div>
   );
 }
 
 /* ------------------------------ Tuile produit ------------------------------ */
-function ProductTile({ productId, name, price, stock, onPick }: { productId: string; name: string; price: number; stock: number; onPick: (id: string) => void }) {
+function ProductTile({
+  productId,
+  name,
+  price,
+  stock,
+  onPick,
+}: {
+  productId: string;
+  name: string;
+  price: number;
+  stock: number;
+  onPick: (id: string) => void;
+}) {
   return (
-    <button className="tile" onClick={() => onPick(productId)} disabled={stock <= 0} title={stock <= 0 ? 'Rupture de stock' : name}>
+    <button
+      className="tile"
+      onClick={() => onPick(productId)}
+      disabled={stock <= 0}
+      title={stock <= 0 ? "Rupture de stock" : name}
+    >
       <span className="name">{name}</span>
       <span className="price">{formatMoney(price)}</span>
-      <span className={`stock ${stock <= 0 ? 'stock-out' : stock <= 5 ? 'stock-low' : ''}`}>
-        {stock <= 0 ? 'Rupture' : `${formatQty(stock)} dispo.`}
+      <span
+        className={`stock ${stock <= 0 ? "stock-out" : stock <= 5 ? "stock-low" : ""}`}
+      >
+        {stock <= 0 ? "Rupture" : `${formatQty(stock)} dispo.`}
       </span>
     </button>
   );
@@ -442,10 +734,19 @@ function VariantPicker({
         {variants.map((v) => {
           const stock = stockByVariant.get(v.id) ?? 0;
           return (
-            <Button key={v.id} variant="outline" onClick={() => onPick(v.id)} disabled={stock <= 0}>
+            <Button
+              key={v.id}
+              variant="outline"
+              onClick={() => onPick(v.id)}
+              disabled={stock <= 0}
+            >
               {v.name}
-              {v.additionalPrice ? ` (+${formatMoney(v.additionalPrice)})` : ''}{' '}
-              <span className="muted">· {stock <= 0 ? 'rupture' : `${formatQty(stock)} dispo.`}</span>
+              {v.additionalPrice
+                ? ` (+${formatMoney(v.additionalPrice)})`
+                : ""}{" "}
+              <span className="muted">
+                · {stock <= 0 ? "rupture" : `${formatQty(stock)} dispo.`}
+              </span>
             </Button>
           );
         })}
@@ -455,54 +756,99 @@ function VariantPicker({
 }
 
 /* ------------------------------ Encaissement ------------------------------- */
-function PaymentModal({ total, onClose, onConfirm }: { total: number; onClose: () => void; onConfirm: (method: PaymentMethod, received: number | null, reference: string | null) => Promise<void> }) {
-  const [method, setMethod] = useState<PaymentMethod>('CASH');
-  const [received, setReceived] = useState<string>('');
-  const [reference, setReference] = useState('');
+function PaymentModal({
+  total,
+  onClose,
+  onConfirm,
+}: {
+  total: number;
+  onClose: () => void;
+  onConfirm: (
+    method: PaymentMethod,
+    received: number | null,
+    reference: string | null,
+  ) => Promise<void>;
+}) {
+  const [method, setMethod] = useState<PaymentMethod>("CASH");
+  const [received, setReceived] = useState<string>("");
+  const [reference, setReference] = useState("");
   const [busy, setBusy] = useState(false);
-  const receivedNum = received ? Number(received.replace(',', '.')) : null;
+  const receivedNum = received ? Number(received.replace(",", ".")) : null;
   const change = changeDue(total, receivedNum);
-  const quick = [total, Math.ceil(total / 500) * 500, Math.ceil(total / 1000) * 1000, Math.ceil(total / 5000) * 5000];
+  const quick = [
+    total,
+    Math.ceil(total / 500) * 500,
+    Math.ceil(total / 1000) * 1000,
+    Math.ceil(total / 5000) * 5000,
+  ];
 
   const confirm = async () => {
-    if (method !== 'CASH' && reference.trim().length < 3) {
+    if (method !== "CASH" && reference.trim().length < 3) {
       return;
     }
     setBusy(true);
     try {
-      await onConfirm(method, method === 'CASH' ? receivedNum : total, method === 'CASH' ? null : reference.trim());
+      await onConfirm(
+        method,
+        method === "CASH" ? receivedNum : total,
+        method === "CASH" ? null : reference.trim(),
+      );
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <Modal title="Encaisser" onClose={() => !busy && onClose()}
+    <Modal
+      title="Encaisser"
+      onClose={() => !busy && onClose()}
       footer={
-        <Button size="lg" block loading={busy} onClick={confirm} disabled={method !== 'CASH' && reference.trim().length < 3}>
+        <Button
+          size="lg"
+          block
+          loading={busy}
+          onClick={confirm}
+          disabled={method !== "CASH" && reference.trim().length < 3}
+        >
           ✅ Valider {formatMoney(total)}
         </Button>
-      }>
+      }
+    >
       <div className="row-between" style={{ marginBottom: 12 }}>
         <span className="muted">À payer</span>
-        <strong style={{ fontSize: '1.4rem' }}>{formatMoney(total)}</strong>
+        <strong style={{ fontSize: "1.4rem" }}>{formatMoney(total)}</strong>
       </div>
       <Field label="Mode de paiement" required>
-        <Select value={method} onChange={(e) => setMethod(e.target.value as PaymentMethod)}>
+        <Select
+          value={method}
+          onChange={(e) => setMethod(e.target.value as PaymentMethod)}
+        >
           {METHODS.map((m) => (
-            <option key={m.id} value={m.id}>{m.icon} {m.label}</option>
+            <option key={m.id} value={m.id}>
+              {m.icon} {m.label}
+            </option>
           ))}
         </Select>
       </Field>
 
-      {method === 'CASH' ? (
+      {method === "CASH" ? (
         <>
           <Field label="Montant reçu">
-            <Input inputMode="decimal" value={received} onChange={(e) => setReceived(e.target.value)} placeholder={String(total)} autoFocus />
+            <Input
+              inputMode="decimal"
+              value={received}
+              onChange={(e) => setReceived(e.target.value)}
+              placeholder={String(total)}
+              autoFocus
+            />
           </Field>
           <div className="pay-quick">
             {[...new Set(quick)].map((amt) => (
-              <button key={amt} className={receivedNum === amt ? 'active' : ''} onClick={() => setReceived(String(amt))}>
+              <button
+                key={amt}
+                className={receivedNum === amt ? "active" : ""}
+                onClick={() => setReceived(String(amt))}
+              >
                 {formatMoney(amt)}
               </button>
             ))}
@@ -515,9 +861,21 @@ function PaymentModal({ total, onClose, onConfirm }: { total: number; onClose: (
           ) : null}
         </>
       ) : (
-        <Field label={method === 'MTN_MOMO' ? 'Référence MTN MoMo (ID transaction)' : 'Référence Orange Money'} required
-          hint="Relevé dans le SMS de confirmation de l’opérateur.">
-          <Input value={reference} onChange={(e) => setReference(e.target.value)} placeholder="Ex. MP240802.1234.A56789" autoFocus />
+        <Field
+          label={
+            method === "MTN_MOMO"
+              ? "Référence MTN MoMo (ID transaction)"
+              : "Référence Orange Money"
+          }
+          required
+          hint="Relevé dans le SMS de confirmation de l’opérateur."
+        >
+          <Input
+            value={reference}
+            onChange={(e) => setReference(e.target.value)}
+            placeholder="Ex. MP240802.1234.A56789"
+            autoFocus
+          />
         </Field>
       )}
     </Modal>
@@ -532,7 +890,7 @@ function SaleSuccess({ sold, onNew }: { sold: SoldState; onNew: () => void }) {
 
   const loadReceipt = async (print = false) => {
     if (!sold.saleId) {
-      show('Reçu disponible après synchronisation en ligne.', 'info');
+      show("Reçu disponible après synchronisation en ligne.", "info");
       return;
     }
     try {
@@ -540,30 +898,50 @@ function SaleSuccess({ sold, onNew }: { sold: SoldState; onNew: () => void }) {
       setReceipt(r);
       if (print) setTimeout(() => window.print(), 150);
     } catch (e) {
-      show(e instanceof Error ? e.message : 'Reçu indisponible', 'error');
+      show(e instanceof Error ? e.message : "Reçu indisponible", "error");
     }
   };
 
   return (
     <div className="wrap" style={{ maxWidth: 560 }}>
-      <div className="card card-pad center" style={{ flexDirection: 'column', gap: 8 }}>
-        <span style={{ fontSize: '3rem' }} aria-hidden>{sold.offline ? '📥' : '✅'}</span>
-        <h1 style={{ margin: 0 }}>{sold.offline ? 'Vente enregistrée (hors-ligne)' : 'Vente validée'}</h1>
-        <div className="kpi-value" style={{ color: 'var(--primary)' }}>{formatMoney(sold.total)}</div>
+      <div
+        className="card card-pad center"
+        style={{ flexDirection: "column", gap: 8 }}
+      >
+        <span style={{ fontSize: "3rem" }} aria-hidden>
+          {sold.offline ? "📥" : "✅"}
+        </span>
+        <h1 style={{ margin: 0 }}>
+          {sold.offline ? "Vente enregistrée (hors-ligne)" : "Vente validée"}
+        </h1>
+        <div className="kpi-value" style={{ color: "var(--primary)" }}>
+          {formatMoney(sold.total)}
+        </div>
         {sold.offline ? (
-          <Badge tone="info">Mise en file — synchronisation automatique au retour du réseau</Badge>
+          <Badge tone="info">
+            Mise en file — synchronisation automatique au retour du réseau
+          </Badge>
         ) : (
-          <Badge tone="ok">Stock déduit · {METHODS.find((m) => m.id === sold.method)?.label}</Badge>
+          <Badge tone="ok">
+            Stock déduit · {METHODS.find((m) => m.id === sold.method)?.label}
+          </Badge>
         )}
-        {sold.method === 'CASH' && sold.received != null ? (
+        {sold.method === "CASH" && sold.received != null ? (
           <p className="muted" style={{ margin: 0 }}>
-            Reçu {formatMoney(sold.received)} · monnaie <strong>{formatMoney(change)}</strong>
+            Reçu {formatMoney(sold.received)} · monnaie{" "}
+            <strong>{formatMoney(change)}</strong>
           </p>
         ) : null}
-        {sold.reference ? <p className="muted" style={{ margin: 0 }}>Référence : {sold.reference}</p> : null}
-        <p className="muted" style={{ margin: 0 }}>{formatDateTime(sold.at)}</p>
+        {sold.reference ? (
+          <p className="muted" style={{ margin: 0 }}>
+            Référence : {sold.reference}
+          </p>
+        ) : null}
+        <p className="muted" style={{ margin: 0 }}>
+          {formatDateTime(sold.at)}
+        </p>
 
-        <div className="receipt-print" style={{ margin: '14px auto 0' }}>
+        <div className="receipt-print" style={{ margin: "14px auto 0" }}>
           <div className="sep" />
           {sold.lines.map((l, i) => (
             <div key={i} className="line">
@@ -574,26 +952,69 @@ function SaleSuccess({ sold, onNew }: { sold: SoldState; onNew: () => void }) {
             </div>
           ))}
           <div className="tot">
-            <div className="line"><span>TOTAL</span><span>{formatMoney(sold.total)}</span></div>
+            <div className="line">
+              <span>TOTAL</span>
+              <span>{formatMoney(sold.total)}</span>
+            </div>
           </div>
         </div>
 
-        <div className="no-print row" style={{ justifyContent: 'center', marginTop: 12, flexWrap: 'wrap' }}>
-          <Button size="lg" onClick={onNew}>🧾 Nouvelle vente</Button>
+        <div
+          className="no-print row"
+          style={{ justifyContent: "center", marginTop: 12, flexWrap: "wrap" }}
+        >
+          <Button size="lg" onClick={onNew}>
+            🧾 Nouvelle vente
+          </Button>
           {!sold.offline ? (
             <>
-              <Button variant="outline" onClick={() => void loadReceipt(true)}>🖨️ Imprimer</Button>
-              <Button variant="outline" onClick={() => void loadReceipt(false)}>👁️ Reçu</Button>
+              <Button variant="outline" onClick={() => void loadReceipt(true)}>
+                🖨️ Imprimer
+              </Button>
+              <Button variant="outline" onClick={() => void loadReceipt(false)}>
+                👁️ Reçu
+              </Button>
             </>
           ) : null}
         </div>
 
         {receipt ? (
-          <div className="receipt-print no-print" style={{ marginTop: 14, textAlign: 'left', background: 'var(--surface-2)', borderRadius: 10, padding: 12 }}>
-            <pre style={{ whiteSpace: 'pre-wrap', margin: 0, fontFamily: 'inherit', fontSize: '0.85rem' }}>{receipt.text}</pre>
+          <div
+            className="receipt-print no-print"
+            style={{
+              marginTop: 14,
+              textAlign: "left",
+              background: "var(--surface-2)",
+              borderRadius: 10,
+              padding: 12,
+            }}
+          >
+            <pre
+              style={{
+                whiteSpace: "pre-wrap",
+                margin: 0,
+                fontFamily: "inherit",
+                fontSize: "0.85rem",
+              }}
+            >
+              {receipt.text}
+            </pre>
             <div className="row" style={{ marginTop: 8 }}>
-              <a className="btn btn-outline btn-sm" href={`https://wa.me/?text=${encodeURIComponent(receipt.text)}`} target="_blank" rel="noreferrer">💬 Partager par WhatsApp</a>
-              <Button variant="ghost" size="sm" onClick={() => setReceipt(null)}>Fermer</Button>
+              <a
+                className="btn btn-outline btn-sm"
+                href={`https://wa.me/?text=${encodeURIComponent(receipt.text)}`}
+                target="_blank"
+                rel="noreferrer"
+              >
+                💬 Partager par WhatsApp
+              </a>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setReceipt(null)}
+              >
+                Fermer
+              </Button>
             </div>
           </div>
         ) : null}

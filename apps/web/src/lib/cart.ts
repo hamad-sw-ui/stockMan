@@ -50,7 +50,10 @@ export interface CartLine extends CartLineInput {
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
 /** Facteur de conversion vers l'unité de base du produit. */
-export function unitFactor(product: { unitBaseValue: number }, unit: { baseValue: number } | null | undefined): number {
+export function unitFactor(
+  product: { unitBaseValue: number },
+  unit: { baseValue: number } | null | undefined,
+): number {
   if (!unit) return 1;
   const productBase = product.unitBaseValue > 0 ? product.unitBaseValue : 1;
   return unit.baseValue / productBase;
@@ -58,7 +61,8 @@ export function unitFactor(product: { unitBaseValue: number }, unit: { baseValue
 
 /** Prix d'une unité de vente (avec supplément variante, facteur et remise). */
 export function effectiveUnitPrice(input: CartLineInput): number {
-  const catalog = input.product.sellingPrice + (input.variant?.additionalPrice ?? 0);
+  const catalog =
+    input.product.sellingPrice + (input.variant?.additionalPrice ?? 0);
   const factor = unitFactor(input.product, input.unit);
   const discount = Math.min(Math.max(input.discountPct ?? 0, 0), 100) / 100;
   return round2(catalog * factor * (1 - discount));
@@ -73,28 +77,50 @@ export function makeLine(input: CartLineInput): CartLine {
     ...input,
     quantity,
     discountPct: discount,
-    key: lineKey(input.product.id, input.variant?.id ?? null, input.unit?.id ?? null),
+    key: lineKey(
+      input.product.id,
+      input.variant?.id ?? null,
+      input.unit?.id ?? null,
+    ),
     factor,
     unitPrice,
     baseQty: round2(quantity * factor),
-    lineTotal: round2(quantity * factor * (input.product.sellingPrice + (input.variant?.additionalPrice ?? 0)) * (1 - discount / 100)),
+    lineTotal: round2(
+      quantity *
+        factor *
+        (input.product.sellingPrice + (input.variant?.additionalPrice ?? 0)) *
+        (1 - discount / 100),
+    ),
   };
 }
 
-export function lineKey(productId: string, variantId: string | null, unitId: string | null): string {
-  return `${productId}::${variantId ?? ''}::${unitId ?? ''}`;
+export function lineKey(
+  productId: string,
+  variantId: string | null,
+  unitId: string | null,
+): string {
+  return `${productId}::${variantId ?? ""}::${unitId ?? ""}`;
 }
 
-export function cartTotal(lines: ReadonlyArray<Pick<CartLine, 'lineTotal'>>): number {
+export function cartTotal(
+  lines: ReadonlyArray<Pick<CartLine, "lineTotal">>,
+): number {
   return round2(lines.reduce((acc, l) => acc + l.lineTotal, 0));
 }
 
 /** Monnaie à rendre (≥ 0). */
-export function changeDue(total: number, received: number | null | undefined): number {
+export function changeDue(
+  total: number,
+  received: number | null | undefined,
+): number {
   if (received == null) return 0;
   return Math.max(0, round2(received - total));
 }
 
-export function paymentLabel(m: 'CASH' | 'MTN_MOMO' | 'ORANGE_MONEY'): string {
-  return m === 'CASH' ? 'Espèces' : m === 'MTN_MOMO' ? 'MTN MoMo' : 'Orange Money';
+export function paymentLabel(m: "CASH" | "MTN_MOMO" | "ORANGE_MONEY"): string {
+  return m === "CASH"
+    ? "Espèces"
+    : m === "MTN_MOMO"
+      ? "MTN MoMo"
+      : "Orange Money";
 }

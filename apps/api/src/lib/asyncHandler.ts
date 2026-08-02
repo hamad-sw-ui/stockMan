@@ -1,4 +1,4 @@
-import { NextFunction, Request, RequestHandler, Response } from 'express';
+import { NextFunction, Request, RequestHandler, Response } from "express";
 
 /** Enveloppe les handlers async pour propager les rejets vers errorHandler. */
 export function h<T extends Request = Request>(

@@ -1,7 +1,7 @@
 /** Types partagés des réponses API (camelCase côté contrats, snake_case toléré
  *  sur certaines ressources brutes SQL — d'où les unions). */
 
-export type PaymentMethod = 'CASH' | 'MTN_MOMO' | 'ORANGE_MONEY';
+export type PaymentMethod = "CASH" | "MTN_MOMO" | "ORANGE_MONEY";
 
 export interface Paged<T> {
   data: T[];
@@ -99,7 +99,7 @@ export interface ProductListItem {
   total_qty: number;
   depot_qty: number;
   variant_count: number;
-  stock_status: 'ok' | 'low' | 'out';
+  stock_status: "ok" | "low" | "out";
 }
 
 export interface ProductDetail extends ProductListItem {
@@ -138,7 +138,13 @@ export interface BootstrapProduct {
   unit_symbol: string | null;
   unit_base_value: number | null;
   category_name: string | null;
-  variants: Array<{ id: string; name: string; sku: string | null; barcode: string | null; additionalPrice: number }>;
+  variants: Array<{
+    id: string;
+    name: string;
+    sku: string | null;
+    barcode: string | null;
+    additionalPrice: number;
+  }>;
 }
 
 export interface PosBootstrap {
@@ -153,7 +159,7 @@ export interface PosBootstrap {
 
 export interface SaleListItem {
   id: string;
-  status: 'COMPLETED' | 'VOIDED';
+  status: "COMPLETED" | "VOIDED";
   total_amount: number;
   payment_method: PaymentMethod;
   payment_reference: string | null;
@@ -185,7 +191,12 @@ export interface SaleReturnGroup {
   reason: string | null;
   created_at: string;
   created_by_name: string | null;
-  items: Array<{ productName: string; variantName: string | null; baseQty: number; unitPrice: number }>;
+  items: Array<{
+    productName: string;
+    variantName: string | null;
+    baseQty: number;
+    unitPrice: number;
+  }>;
 }
 
 export interface SaleDetail extends SaleListItem {
@@ -206,7 +217,13 @@ export interface ReceiptData {
     total_amount: string;
   };
   tenant: { name: string; phone: string | null; currency: string };
-  lines: Array<{ label: string; qty: number; unit: string; unitPrice: number; total: number }>;
+  lines: Array<{
+    label: string;
+    qty: number;
+    unit: string;
+    unitPrice: number;
+    total: number;
+  }>;
   text: string;
 }
 
@@ -229,7 +246,7 @@ export interface VendorRow {
   id: string;
   name: string;
   email: string;
-  role: 'ADMIN' | 'VENDEUR';
+  role: "ADMIN" | "VENDEUR";
   is_active: boolean;
   depot_id: string | null;
   depot_name: string | null;
@@ -242,7 +259,7 @@ export interface NotificationRow {
   type: string;
   channel: string;
   message: string;
-  status: 'PENDING' | 'SENT' | 'FAILED' | 'READ';
+  status: "PENDING" | "SENT" | "FAILED" | "READ";
   phone: string | null;
   created_at: string;
   provider_response: string | null;
@@ -296,7 +313,7 @@ export interface LicenseRow {
   plan_code: string;
   plan_name?: string;
   monthly_price?: number;
-  status: 'TRIAL' | 'ACTIVE' | 'EXPIRED' | 'SUSPENDED';
+  status: "TRIAL" | "ACTIVE" | "EXPIRED" | "SUSPENDED";
   start_date: string;
   end_date: string;
   max_users: number;
@@ -326,7 +343,7 @@ export interface TransferRow {
   from_depot_name: string;
   to_depot_name: string;
   note: string | null;
-  status: 'PENDING' | 'RECEIVED' | 'CANCELLED';
+  status: "PENDING" | "RECEIVED" | "CANCELLED";
   created_by_name: string | null;
   created_at: string;
 }

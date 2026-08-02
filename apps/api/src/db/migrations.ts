@@ -1,9 +1,9 @@
-import crypto from 'crypto';
-import fs from 'fs';
-import path from 'path';
-import { getPool } from '../config/db';
-import { getEnv } from '../config/env';
-import { logger } from '../lib/logger';
+import crypto from "crypto";
+import fs from "fs";
+import path from "path";
+import { getPool } from "../config/db";
+import { getEnv } from "../config/env";
+import { logger } from "../lib/logger";
 
 /**
  * Runner de migrations versionnées (corrige ARC-03/04/05) :
@@ -26,14 +26,14 @@ export function locateMigrationsDir(): string {
   if (envDir && fs.existsSync(envDir)) return envDir;
   let dir = __dirname;
   for (let i = 0; i < 8; i++) {
-    const candidate = path.join(dir, 'database', 'migrations');
+    const candidate = path.join(dir, "database", "migrations");
     if (fs.existsSync(candidate)) return candidate;
     const parent = path.dirname(dir);
     if (parent === dir) break;
     dir = parent;
   }
   throw new Error(
-    'Dossier database/migrations introuvable. Définissez MIGRATIONS_DIR.',
+    "Dossier database/migrations introuvable. Définissez MIGRATIONS_DIR.",
   );
 }
 
@@ -44,13 +44,13 @@ export function listMigrationFiles(dir?: string): MigrationFile[] {
     .filter((f) => /^V\d+__.+\.sql$/.test(f))
     .sort()
     .map((f) => {
-      const content = fs.readFileSync(path.join(migrationsDir, f), 'utf8');
-      const version = f.split('__')[0]!;
+      const content = fs.readFileSync(path.join(migrationsDir, f), "utf8");
+      const version = f.split("__")[0]!;
       return {
         version,
         name: f,
         file: path.join(migrationsDir, f),
-        checksum: crypto.createHash('sha256').update(content).digest('hex'),
+        checksum: crypto.createHash("sha256").update(content).digest("hex"),
       };
     });
 }
@@ -70,14 +70,17 @@ export async function ensureMigrationsTable(): Promise<void> {
     )`);
 }
 
-export async function applyMigrations(): Promise<{ applied: string[]; skipped: string[] }> {
+export async function applyMigrations(): Promise<{
+  applied: string[];
+  skipped: string[];
+}> {
   await ensureMigrationsTable();
   const files = listMigrationFiles();
   const applied: string[] = [];
   const skipped: string[] = [];
 
   const existing = await getPool().query<{ version: string; checksum: string }>(
-    'SELECT version, checksum FROM schema_migrations',
+    "SELECT version, checksum FROM schema_migrations",
   );
   const byVersion = new Map(existing.rows.map((r) => [r.version, r.checksum]));
 
@@ -87,26 +90,26 @@ export async function applyMigrations(): Promise<{ applied: string[]; skipped: s
       if (knownChecksum !== m.checksum) {
         throw new Error(
           `Migration ${m.name} modifiée après application (checksum différent). ` +
-            'Créez une nouvelle migration plutôt que de modifier un fichier appliqué.',
+            "Créez une nouvelle migration plutôt que de modifier un fichier appliqué.",
         );
       }
       skipped.push(m.name);
       continue;
     }
-    const sql = fs.readFileSync(m.file, 'utf8');
+    const sql = fs.readFileSync(m.file, "utf8");
     const client = await getPool().connect();
     try {
-      await client.query('BEGIN');
+      await client.query("BEGIN");
       await client.query(sql);
       await client.query(
-        'INSERT INTO schema_migrations (version, name, checksum) VALUES ($1,$2,$3)',
+        "INSERT INTO schema_migrations (version, name, checksum) VALUES ($1,$2,$3)",
         [m.version, m.name, m.checksum],
       );
-      await client.query('COMMIT');
+      await client.query("COMMIT");
       applied.push(m.name);
       logger.info(`Migration appliquée : ${m.name}`);
     } catch (err) {
-      await client.query('ROLLBACK').catch(() => undefined);
+      await client.query("ROLLBACK").catch(() => undefined);
       const message = err instanceof Error ? err.message : String(err);
       logger.error(`Échec migration ${m.name}`, { message });
       throw new Error(`Migration ${m.name} échouée : ${message}`);
@@ -127,7 +130,13 @@ export async function migrationStatus(): Promise<
 > {
   await ensureMigrationsTable();
   const files = listMigrationFiles();
-  const existing = await getPool().query<{ version: string }>('SELECT version FROM schema_migrations');
+  const existing = await getPool().query<{ version: string }>(
+    "SELECT version FROM schema_migrations",
+  );
   const set = new Set(existing.rows.map((r) => r.version));
-  return files.map((f) => ({ version: f.version, name: f.name, applied: set.has(f.version) }));
+  return files.map((f) => ({
+    version: f.version,
+    name: f.name,
+    applied: set.has(f.version),
+  }));
 }

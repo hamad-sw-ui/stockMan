@@ -1,11 +1,28 @@
-import { PoolClient } from 'pg';
-import { query } from '../config/db';
+import { PoolClient } from "pg";
+import { query } from "../config/db";
 
 export interface AuditEntry {
   tenantId: string;
   userId?: string | null;
   userName?: string | null;
-  action: 'CREATE' | 'UPDATE' | 'DELETE' | 'ARCHIVE' | 'RESTORE' | 'VOID' | 'RETURN' | 'LOGIN' | 'IMPERSONATE' | 'TRANSFER' | 'RECEIPT' | 'ADJUST' | 'SALE' | 'CONFIG' | 'LICENSE';
+  action:
+    | "CREATE"
+    | "UPDATE"
+    | "DELETE"
+    | "ARCHIVE"
+    | "RESTORE"
+    | "VOID"
+    | "RETURN"
+    | "LOGIN"
+    | "IMPERSONATE"
+    | "TRANSFER"
+    | "RECEIPT"
+    | "ADJUST"
+    | "SALE"
+    | "CONFIG"
+    | "LICENSE"
+    | "IMPORT"
+    | "MIGRATION";
   entity: string;
   entityId?: string | null;
   previousState?: unknown;
@@ -19,7 +36,10 @@ export interface AuditEntry {
  * alimentée). Accepte un client transactionnel pour rester atomique avec
  * l'opération auditée.
  */
-export async function writeAudit(entry: AuditEntry, client?: PoolClient): Promise<void> {
+export async function writeAudit(
+  entry: AuditEntry,
+  client?: PoolClient,
+): Promise<void> {
   const sql = `INSERT INTO audit_logs
     (tenant_id, user_id, user_name, action, entity, entity_id, previous_state, new_state, details, depot_id)
     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`;
