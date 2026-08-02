@@ -92,7 +92,7 @@ npm run dev:web      # Web sur :5173 (vite, proxy → :5000)
 | `npm run typecheck`             | TypeScript strict, zéro `any` non maîtrisé                                                                                                                                          |
 | `npm run build`                 | API (tsc → dist/) + Web (vite → dist/)                                                                                                                                              |
 | `npm run format`                | Prettier sur tout le dépôt                                                                                                                                                          |
-| CI (`.github/workflows/ci.yml`) | migrations ×2 sur **vraie Postgres 16**, seed rejouable, tests API/web, build, **migration V1→V2 bout-en-bout**, **fumée `docker compose` complète** (register → login → API → web) |
+| CI (`deploy/ci.yml`) | migrations ×2 sur **vraie Postgres 16**, seed rejouable, tests API/web, build, **migration V1→V2 bout-en-bout**, **fumée `docker compose` complète** (register → login → API → web) |
 
 Sécurité par conception : RBAC testé croisé-tenant, isolation multi-tenant en SQL,
 rate-limiting (global + auth), PIN/mots de passe bcrypt, refresh tokens rotatifs
@@ -119,7 +119,7 @@ database/         migrations V001-V003, seeds, legacy/ (Schéma V1 figé, repris
 scripts/          create-superadmin, reset-user-password, backup.sh, migrate-v1-to-v2
 deploy/           exemple nginx public (TLS), compose.yml racine
 docs/             audit, matrice des interfaces, plan, runbook, référence API
-.github/          CI complète (5 jobs)
+deploy/ci.yml     Définition CI complète (5 jobs) — à activer, voir encadré ci-dessous
 ```
 
 ## Documentation
@@ -147,3 +147,10 @@ docs/             audit, matrice des interfaces, plan, runbook, référence API
 | `WA_TOKEN` / `WA_PHONE_ID`                    | —      | WhatsApp Cloud API                                       |
 
 Licence : usage interne de l'éditeur — tous droits réservés.
+
+> **Activation CI :** le workflow est livré dans [`deploy/ci.yml`](deploy/ci.yml).
+> Pour l'activer sur GitHub Actions, copiez-le vers `.github/workflows/ci.yml`
+> (l'ajout d'un workflow exige la permission « workflows » sur le jeton Git
+> utilisé — l'exécuter avec un compte mainteneur). Les 5 jobs tournent ensuite à
+> chaque push/PR : tests API (Postgres 16 réelle), tests Web, audit npm,
+> migration V1→V2 de bout en bout et fumée Docker Compose.
