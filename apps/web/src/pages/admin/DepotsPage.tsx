@@ -1,6 +1,6 @@
 /** Dépôts & transferts : CRUD des emplacements, vue stock par dépôt et
  *  transferts inter-dépôts (création, réception, annulation). */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Badge,
   Button,
@@ -25,6 +25,7 @@ import type {
   Paged,
   ProductListItem,
   TransferRow,
+  TransitRow,
   VendorRow,
 } from "../../lib/types";
 
@@ -319,16 +320,21 @@ function TransfersTab() {
     "transfers:list",
     "/stock/transfers?size=50",
   );
+  // E8 — stock EN TRANSIT : reliquats des transferts ouverts, valorisés.
+  const transit = useQuery<{
+    data: TransitRow[];
+    total: number;
+    totalValue: number;
+  }>("transit:list", "/stock/transit");
   const [form, setForm] = useState<{
     fromDepotId: string;
     toDepotId: string;
     note: string;
     items: Array<{ productId: string; quantity: string }>;
   } | null>(null);
-  const [confirm, setConfirm] = useState<{
-    action: "receive" | "cancel";
-    transfer: TransferRow;
-  } | null>(null);
+  // E8 — réception PARTIELLE par ligne (écarts DAMAGE/LOSS avec motif).
+  const [receive, setReceive] = useState<TransferRow | null>(null);
+  const [cancel, setCancel] = useState<TransferRow | null>(null);
   const [busy, setBusy] = useState(false);
   const [productQuery, setProductQuery] = useState("");
   const [productResults, setProductResults] = useState<ProductListItem[]>([]);
@@ -374,6 +380,7 @@ function TransfersTab() {
         "success",
       );
       invalidateQueries("transfers:");
+      invalidateQueries("transit:");
       setForm(null);
     } catch (e) {
       show(e instanceof Error ? e.message : "Création impossible", "error");
@@ -382,19 +389,18 @@ function TransfersTab() {
     }
   };
 
-  const doConfirm = async () => {
-    if (!confirm) return;
+  const doCancel = async () => {
+    if (!cancel) return;
     setBusy(true);
     try {
-      await post(`/stock/transfers/${confirm.transfer.id}/${confirm.action}`);
+      await post(`/stock/transfers/${cancel.id}/cancel`);
       show(
-        confirm.action === "receive"
-          ? "Transfert réceptionné : stock crédité au dépôt destination."
-          : "Transfert annulé : stock restitué au dépôt source.",
+        "Transfert annulé : seul le reliquat (non reçu, non perdu) est restitué au dépôt source.",
         "success",
       );
       invalidateQueries("transfers:");
-      setConfirm(null);
+      invalidateQueries("transit:");
+      setCancel(null);
     } catch (e) {
       show(e instanceof Error ? e.message : "Action impossible", "error");
     } finally {
@@ -405,6 +411,8 @@ function TransfersTab() {
   const statusBadge = (s: string) =>
     s === "PENDING" ? (
       <Badge tone="warn">En transit</Badge>
+    ) : s === "PARTIALLY_RECEIVED" ? (
+      <Badge tone="info">Partiellement reçu</Badge>
     ) : s === "RECEIVED" ? (
       <Badge tone="ok">Reçu</Badge>
     ) : (
@@ -433,6 +441,58 @@ function TransfersTab() {
           </span>
         ) : null}
       </div>
+
+      {/* E8 — stock EN TRANSIT : reliquats des transferts ouverts (valeur). */}
+      {transit.data && transit.data.data.length > 0 ? (
+        <Card
+          title={`🚚 Stock en transit — ${transit.data.total} ligne(s), valeur ${formatQty(transit.data.totalValue)} FCFA`}
+        >
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Produit</th>
+                  <th>De</th>
+                  <th>Vers</th>
+                  <th>Expédié</th>
+                  <th>Reçu</th>
+                  <th>Perdu</th>
+                  <th>En transit</th>
+                </tr>
+              </thead>
+              <tbody>
+                {transit.data.data.map((r) => (
+                  <tr key={r.itemId}>
+                    <td>
+                      {r.product}
+                      {r.variantName ? (
+                        <span className="muted"> ({r.variantName})</span>
+                      ) : null}
+                    </td>
+                    <td className="muted">{r.fromDepot}</td>
+                    <td className="muted">{r.toDepot}</td>
+                    <td>{formatQty(r.shipped)}</td>
+                    <td>{formatQty(r.received)}</td>
+                    <td>
+                      {r.lost > 0 ? (
+                        <Badge tone="danger">
+                          {formatQty(r.lost)}{" "}
+                          {r.discrepancyReason === "DAMAGE" ? "casse" : "perte"}
+                        </Badge>
+                      ) : (
+                        "—"
+                      )}
+                    </td>
+                    <td>
+                      <strong>{formatQty(r.inTransit)}</strong>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      ) : null}
 
       {q.loading ? (
         <Spinner label="Chargement…" />
@@ -465,7 +525,8 @@ function TransfersTab() {
                     <td>{statusBadge(t.status)}</td>
                     <td className="muted">{t.created_by_name ?? "—"}</td>
                     <td>
-                      {t.status === "PENDING" ? (
+                      {t.status === "PENDING" ||
+                      t.status === "PARTIALLY_RECEIVED" ? (
                         <div
                           className="row"
                           style={{ gap: 4, flexWrap: "nowrap" }}
@@ -473,18 +534,14 @@ function TransfersTab() {
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() =>
-                              setConfirm({ action: "receive", transfer: t })
-                            }
+                            onClick={() => setReceive(t)}
                           >
                             ✅ Réceptionner
                           </Button>
                           <Button
                             variant="ghost"
                             size="sm"
-                            onClick={() =>
-                              setConfirm({ action: "cancel", transfer: t })
-                            }
+                            onClick={() => setCancel(t)}
                           >
                             Annuler
                           </Button>
@@ -678,38 +735,254 @@ function TransfersTab() {
         </Modal>
       ) : null}
 
-      {confirm ? (
+      {cancel ? (
         <ConfirmModal
-          title={
-            confirm.action === "receive"
-              ? "Réceptionner le transfert"
-              : "Annuler le transfert"
-          }
-          danger={confirm.action === "cancel"}
-          confirmLabel={
-            confirm.action === "receive"
-              ? "Réceptionner"
-              : "Annuler le transfert"
-          }
+          title="Annuler le transfert"
+          danger
+          confirmLabel="Annuler le transfert"
           message={
-            confirm.action === "receive" ? (
-              <>
-                Le stock sera crédité au dépôt{" "}
-                <strong>{confirm.transfer.to_depot_name}</strong>.
-              </>
-            ) : (
-              <>
-                Le stock sera restitué au dépôt{" "}
-                <strong>{confirm.transfer.from_depot_name}</strong>.
-              </>
-            )
+            <>
+              Seul le <strong>reliquat</strong> (quantité ni reçue ni perdue)
+              sera restitué au dépôt <strong>{cancel.from_depot_name}</strong> ;
+              ce qui est déjà réceptionné reste en place.
+            </>
           }
-          onConfirm={doConfirm}
-          onClose={() => setConfirm(null)}
+          onConfirm={doCancel}
+          onClose={() => setCancel(null)}
           loading={busy}
         />
       ) : null}
+
+      {receive ? (
+        <ReceiveModal
+          transfer={receive}
+          onClose={() => setReceive(null)}
+          onDone={(status) => {
+            show(
+              status === "RECEIVED"
+                ? "Transfert clôturé : tout le reliquat est résolu."
+                : "Réception partielle enregistrée : le reliquat reste en transit.",
+              "success",
+            );
+            invalidateQueries("transfers:");
+            invalidateQueries("transit:");
+            setReceive(null);
+          }}
+        />
+      ) : null}
     </>
+  );
+}
+
+/* --------------------- Réception partielle d'un transfert (E8) ------------- */
+/**
+ * Ligne par ligne : quantité REÇUE au dépôt destination, quantité PERDUE avec
+ * motif codifié (DAMAGE casse / LOSS perte — valorisée au coût des lots), le
+ * reliquat restant éventuel reste en transit (statut PARTIALLY_RECEIVED).
+ */
+function ReceiveModal({
+  transfer,
+  onClose,
+  onDone,
+}: {
+  transfer: TransferRow;
+  onClose: () => void;
+  onDone: (status: string) => void;
+}) {
+  const { show } = useToast();
+  const transit = useQuery<{
+    data: TransitRow[];
+    total: number;
+    totalValue: number;
+  }>("transit:list", "/stock/transit");
+  const lines = (transit.data?.data ?? []).filter(
+    (r) => r.transferId === transfer.id && r.inTransit > 1e-9,
+  );
+  const key = transfer.id;
+  const [rows, setRows] = useState<
+    Record<
+      string,
+      { recv: string; lost: string; reason: "DAMAGE" | "LOSS" | "" }
+    >
+  >({});
+  const [busy, setBusy] = useState(false);
+
+  // Pré-remplissage : tout le reliquat reçu par défaut (réception complète
+  // en un clic — le cas partiel est l'exception).
+  useEffect(() => {
+    if (!transit.data) return;
+    setRows((cur) => {
+      const next = { ...cur };
+      for (const l of lines) {
+        if (!(l.itemId in next)) {
+          next[l.itemId] = { recv: String(l.inTransit), lost: "0", reason: "" };
+        }
+      }
+      return next;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [transit.data, key]);
+
+  const num = (s: string) => {
+    const n = Number((s || "0").replace(",", "."));
+    return Number.isFinite(n) && n >= 0 ? n : NaN;
+  };
+
+  const submit = async () => {
+    const items: Array<{
+      transferItemId: string;
+      receivedQty: number;
+      lostQty: number;
+      discrepancyReason?: "DAMAGE" | "LOSS" | null;
+    }> = [];
+    for (const l of lines) {
+      const r = rows[l.itemId] ?? {
+        recv: String(l.inTransit),
+        lost: "0",
+        reason: "",
+      };
+      const recv = num(r.recv);
+      const lost = num(r.lost);
+      if (Number.isNaN(recv) || Number.isNaN(lost)) {
+        show(`Quantité illisible sur « ${l.product} ».`, "error");
+        return;
+      }
+      if (recv + lost > l.inTransit + 1e-9) {
+        show(
+          `« ${l.product} » : reçu + perdu (${recv + lost}) dépasse le reliquat (${l.inTransit}).`,
+          "error",
+        );
+        return;
+      }
+      if (lost > 0 && !r.reason) {
+        show(
+          `« ${l.product} » : précisez le motif de la perte (casse ou perte).`,
+          "error",
+        );
+        return;
+      }
+      items.push({
+        transferItemId: l.itemId,
+        receivedQty: recv,
+        lostQty: lost,
+        discrepancyReason: lost > 0 ? (r.reason as "DAMAGE" | "LOSS") : null,
+      });
+    }
+    setBusy(true);
+    try {
+      const res = await post<{ status: string }>(
+        `/stock/transfers/${transfer.id}/receive`,
+        { items },
+      );
+      onDone(res.status);
+    } catch (e) {
+      show(e instanceof Error ? e.message : "Réception impossible", "error");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal
+      title={`Réceptionner — ${transfer.from_depot_name} → ${transfer.to_depot_name}`}
+      onClose={() => !busy && onClose()}
+      wide
+      footer={
+        <>
+          <Button variant="outline" onClick={onClose} disabled={busy}>
+            Annuler
+          </Button>
+          <Button loading={busy} onClick={submit} disabled={lines.length === 0}>
+            Valider la réception
+          </Button>
+        </>
+      }
+    >
+      {transit.loading ? (
+        <Spinner label="Chargement des lignes…" />
+      ) : lines.length === 0 ? (
+        <EmptyState emoji="📦" title="Aucun reliquat en transit">
+          Ce transfert est déjà intégralement résolu.
+        </EmptyState>
+      ) : (
+        <>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Produit</th>
+                  <th>Reliquat</th>
+                  <th>Reçu ✅</th>
+                  <th>Perdu ⚠️</th>
+                  <th>Motif</th>
+                </tr>
+              </thead>
+              <tbody>
+                {lines.map((l) => {
+                  const r = rows[l.itemId] ?? {
+                    recv: String(l.inTransit),
+                    lost: "0",
+                    reason: "" as const,
+                  };
+                  const set = (patch: Partial<typeof r>) =>
+                    setRows({ ...rows, [l.itemId]: { ...r, ...patch } });
+                  return (
+                    <tr key={l.itemId}>
+                      <td>
+                        {l.product}
+                        {l.variantName ? (
+                          <span className="muted"> ({l.variantName})</span>
+                        ) : null}
+                      </td>
+                      <td>
+                        <strong>{formatQty(l.inTransit)}</strong>
+                      </td>
+                      <td style={{ width: 110 }}>
+                        <Input
+                          inputMode="decimal"
+                          value={r.recv}
+                          onChange={(e) => set({ recv: e.target.value })}
+                        />
+                      </td>
+                      <td style={{ width: 110 }}>
+                        <Input
+                          inputMode="decimal"
+                          value={r.lost}
+                          onChange={(e) => set({ lost: e.target.value })}
+                        />
+                      </td>
+                      <td style={{ width: 150 }}>
+                        {num(r.lost) > 0 ? (
+                          <Select
+                            value={r.reason}
+                            onChange={(e) =>
+                              set({
+                                reason: e.target.value as
+                                  "DAMAGE" | "LOSS" | "",
+                              })
+                            }
+                          >
+                            <option value="">— Motif requis —</option>
+                            <option value="DAMAGE">Casse (DAMAGE)</option>
+                            <option value="LOSS">Perte (LOSS)</option>
+                          </Select>
+                        ) : (
+                          <span className="muted">—</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <p className="muted" style={{ fontSize: "0.85rem" }}>
+            ⚠️ Les quantités perdues sont valorisées au coût des lots et tracées
+            (audit + mouvement). Un reliquat éventuel reste « en transit ».
+          </p>
+        </>
+      )}
+    </Modal>
   );
 }
 

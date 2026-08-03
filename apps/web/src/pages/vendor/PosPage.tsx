@@ -19,7 +19,14 @@ import {
   CameraScanner,
   cameraScanSupported,
 } from "../../components/CameraScanner";
-import { cartTotal, changeDue, makeLine, type CartLine } from "../../lib/cart";
+import { CashSessionGate } from "../../components/CashSessionGate";
+import {
+  cartTotal,
+  changeDue,
+  lineKey,
+  makeLine,
+  type CartLine,
+} from "../../lib/cart";
 import { formatDateTime, formatMoney, formatQty } from "../../lib/format";
 import { ApiError, get, post } from "../../lib/http";
 import { enqueueSale } from "../../lib/offline/outbox";
@@ -27,7 +34,14 @@ import { installAutoSync } from "../../lib/offline/sync";
 import { usePosBootstrap, type BootstrapStatus } from "../../lib/pos";
 import { useOnlineStatus } from "../../components/Shell";
 import { useToast } from "../../store/toast";
-import type { PaymentMethod, ReceiptData } from "../../lib/types";
+import type {
+  PaymentMethod,
+  PosCustomer,
+  ReceiptData,
+  SerialRow,
+} from "../../lib/types";
+
+const round2 = (n: number) => Math.round(n * 100) / 100;
 
 /* ------------------------------ Types locaux ------------------------------- */
 interface SoldState {
@@ -39,6 +53,8 @@ interface SoldState {
   offline: boolean;
   lines: Array<{ label: string; qty: number; unit: string; total: number }>;
   at: string;
+  customerName?: string | null;
+  outstanding?: number;
 }
 
 const METHODS: Array<{ id: PaymentMethod; label: string; icon: string }> = [
@@ -59,6 +75,11 @@ export default function PosPage() {
   const [category, setCategory] = useState("");
   const [cart, setCart] = useState<CartLine[]>([]);
   const [variantPick, setVariantPick] = useState<string | null>(null); // productId
+  // Produit sérialisé (IMEI) en cours de capture des numéros — E8.
+  const [serialPick, setSerialPick] = useState<{
+    productId: string;
+    variantId: string | null;
+  } | null>(null);
   const [payOpen, setPayOpen] = useState(false);
   const [sold, setSold] = useState<SoldState | null>(null);
   const [scanOpen, setScanOpen] = useState(false);
@@ -126,6 +147,13 @@ export default function PosPage() {
     const v = variantId
       ? (p.variants.find((x) => x.id === variantId) ?? null)
       : null;
+    // Produit sérialisé (IMEI) : on ne peut pas l'ajouter « en vrac » —
+    // chaque article vendu doit être identifié par son numéro de série.
+    if (p.requires_serial) {
+      setVariantPick(null);
+      setSerialPick({ productId, variantId });
+      return;
+    }
     const unit = p.unit_id ? (unitById.get(p.unit_id) ?? null) : null;
     const line = makeLine({
       product: {
@@ -161,6 +189,58 @@ export default function PosPage() {
       return [...prev, line];
     });
     setVariantPick(null);
+  };
+
+  /** Validation de la capture IMEI : (ré)écrit la ligne sérialisée du panier.
+   *  Règles alignées API : unité de base uniquement, 1 numéro = 1 article. */
+  const confirmSerials = (
+    productId: string,
+    variantId: string | null,
+    serials: string[],
+  ) => {
+    if (!b) return;
+    const p = b.products.find((x) => x.id === productId);
+    if (!p) return;
+    const v = variantId
+      ? (p.variants.find((x) => x.id === variantId) ?? null)
+      : null;
+    if (serials.length === 0) {
+      // Plus aucun numéro = retrait de la ligne.
+      setCart((prev) =>
+        prev.filter((l) => l.key !== lineKey(productId, variantId, null)),
+      );
+      setSerialPick(null);
+      return;
+    }
+    const line = makeLine({
+      product: {
+        id: p.id,
+        name: p.name,
+        sellingPrice: p.selling_price,
+        unitBaseValue: p.unit_base_value ?? 1,
+        unitId: p.unit_id,
+        unitSymbol: p.unit_symbol,
+        barcode: p.barcode,
+        requiresSerial: true,
+      },
+      variant: v
+        ? {
+            id: v.id,
+            name: v.name,
+            additionalPrice: v.additionalPrice,
+            barcode: v.barcode,
+          }
+        : null,
+      unit: null, // vente à l'unité de base (invariant serveur SERIAL_BASE_UNIT_ONLY)
+      quantity: serials.length,
+      serialNumbers: serials,
+    });
+    setCart((prev) => {
+      const existing = prev.find((l) => l.key === line.key);
+      if (existing) return prev.map((l) => (l.key === line.key ? line : l));
+      return [...prev, line];
+    });
+    setSerialPick(null);
   };
 
   const pickProduct = (productId: string) => {
@@ -247,10 +327,16 @@ export default function PosPage() {
     method: PaymentMethod,
     received: number | null,
     reference: string | null,
+    customer?: PosCustomer | null,
+    paidNow?: number | null,
+    dueDate?: string | null,
   ) => {
     if (!b || cart.length === 0) return;
     const clientSaleId = crypto.randomUUID();
-    const payload = {
+    // Crédit (E3) : montant payé maintenant < total ⇒ versement partiel tracé
+    const paid = paidNow == null ? total : Math.min(paidNow, total);
+    const credit = round2(total - paid);
+    const payload: Record<string, unknown> = {
       depotId: b.depotId,
       items: cart.map((l) => ({
         productId: l.product.id,
@@ -258,13 +344,21 @@ export default function PosPage() {
         unitId: l.unit?.id ?? null,
         quantity: l.quantity,
         discountPct: l.discountPct ?? 0,
+        // Produit sérialisé (E8) : IMEI vendus — figés sur la ligne serveur.
+        serialNumbers: l.serialNumbers ?? undefined,
       })),
       paymentMethod: method,
       paymentReference: reference,
       clientSaleId,
       createdAt: new Date().toISOString(),
-      amountReceived: received ?? undefined,
     };
+    if (customer) payload.customerId = customer.id;
+    if (credit > 0 && customer) {
+      payload.payments = paid > 1e-9 ? [{ method, amount: paid }] : [];
+      if (dueDate) payload.dueDate = dueDate;
+    } else {
+      payload.amountReceived = received ?? undefined;
+    }
     const linesSnapshot = cart.map((l) => ({
       label: `${l.product.name}${l.variant ? ` · ${l.variant.name}` : ""}`,
       qty: l.quantity,
@@ -289,6 +383,8 @@ export default function PosPage() {
         offline: true,
         lines: linesSnapshot,
         at,
+        customerName: customer?.name ?? null,
+        outstanding: credit > 0 ? credit : 0,
       });
       setCart([]);
       setPayOpen(false);
@@ -303,10 +399,9 @@ export default function PosPage() {
       return;
     }
     try {
-      const res = await post<{ sale: { id: string; total_amount: number } }>(
-        "/sales",
-        payload,
-      );
+      const res = await post<{
+        sale: { id: string; total_amount: number; amount_paid: number };
+      }>("/sales", payload);
       setSold({
         saleId: res.sale.id,
         total: Number(res.sale.total_amount),
@@ -316,6 +411,10 @@ export default function PosPage() {
         offline: false,
         lines: linesSnapshot,
         at,
+        customerName: customer?.name ?? null,
+        outstanding: round2(
+          Number(res.sale.total_amount) - Number(res.sale.amount_paid ?? 0),
+        ),
       });
       setCart([]);
       setPayOpen(false);
@@ -368,6 +467,8 @@ export default function PosPage() {
 
   return (
     <div className="pos-wrap">
+      {/* Verrou « session obligatoire » (E6) : bloque la vente hors caisse */}
+      <CashSessionGate />
       {/* ------------------------------ Catalogue ------------------------------ */}
       <section className="pos-catalog">
         <div className="pos-tools">
@@ -526,8 +627,37 @@ export default function PosPage() {
                       {formatMoney(l.unitPrice)} /{" "}
                       {l.unit?.symbol ?? l.product.unitSymbol ?? "u"}
                     </div>
+                    {l.product.requiresSerial ? (
+                      <div style={{ marginTop: 4 }}>
+                        <Badge tone="info">🔢 Sérialisé</Badge>{" "}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() =>
+                            setSerialPick({
+                              productId: l.product.id,
+                              variantId: l.variant?.id ?? null,
+                            })
+                          }
+                        >
+                          Modifier les IMEI
+                        </Button>
+                        <div
+                          className="muted"
+                          style={{
+                            fontSize: "0.72rem",
+                            fontFamily: "monospace",
+                            marginTop: 2,
+                            wordBreak: "break-all",
+                          }}
+                        >
+                          {(l.serialNumbers ?? []).join(" · ")}
+                        </div>
+                      </div>
+                    ) : null}
                     <div className="row" style={{ gap: 6, marginTop: 4 }}>
-                      {(b?.units ?? []).length > 1 ? (
+                      {(b?.units ?? []).length > 1 &&
+                      !l.product.requiresSerial ? (
                         <select
                           className="select"
                           style={{
@@ -586,25 +716,41 @@ export default function PosPage() {
                     }}
                   >
                     <div className="amount">{formatMoney(l.lineTotal)}</div>
-                    <div className="qty-stepper">
-                      <button
-                        onClick={() =>
-                          l.quantity <= 1
-                            ? removeLine(l.key)
-                            : setQty(l.key, l.quantity - 1)
-                        }
-                        aria-label="Diminuer"
-                      >
-                        −
-                      </button>
-                      <span>{formatQty(l.quantity)}</span>
-                      <button
-                        onClick={() => setQty(l.key, l.quantity + 1)}
-                        aria-label="Augmenter"
-                      >
-                        +
-                      </button>
-                    </div>
+                    {l.product.requiresSerial ? (
+                      <>
+                        <div className="muted" style={{ fontSize: "0.8rem" }}>
+                          {formatQty(l.quantity)} article(s)
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => removeLine(l.key)}
+                          aria-label="Retirer la ligne"
+                        >
+                          🗑️
+                        </Button>
+                      </>
+                    ) : (
+                      <div className="qty-stepper">
+                        <button
+                          onClick={() =>
+                            l.quantity <= 1
+                              ? removeLine(l.key)
+                              : setQty(l.key, l.quantity - 1)
+                          }
+                          aria-label="Diminuer"
+                        >
+                          −
+                        </button>
+                        <span>{formatQty(l.quantity)}</span>
+                        <button
+                          onClick={() => setQty(l.key, l.quantity + 1)}
+                          aria-label="Augmenter"
+                        >
+                          +
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}
@@ -658,10 +804,50 @@ export default function PosPage() {
         />
       ) : null}
 
+      {/* Capture des numéros de série (IMEI) — produit sérialisé (E8) */}
+      {serialPick
+        ? (() => {
+            const existing = cart.find(
+              (l) =>
+                l.key ===
+                lineKey(serialPick.productId, serialPick.variantId, null),
+            );
+            return (
+              <SerialPickerModal
+                productName={
+                  b?.products.find((p) => p.id === serialPick.productId)
+                    ?.name ?? ""
+                }
+                variantName={
+                  serialPick.variantId
+                    ? (b?.products
+                        .find((p) => p.id === serialPick.productId)
+                        ?.variants.find((v) => v.id === serialPick.variantId)
+                        ?.name ?? null)
+                    : null
+                }
+                productId={serialPick.productId}
+                depotId={b?.depotId ?? ""}
+                online={online}
+                initial={existing?.serialNumbers ?? []}
+                onConfirm={(serials) =>
+                  confirmSerials(
+                    serialPick.productId,
+                    serialPick.variantId,
+                    serials,
+                  )
+                }
+                onClose={() => setSerialPick(null)}
+              />
+            );
+          })()
+        : null}
+
       {/* Encaissement */}
       {payOpen ? (
         <PaymentModal
           total={total}
+          customers={b?.customers ?? []}
           onClose={() => setPayOpen(false)}
           onConfirm={finishSale}
         />
@@ -758,23 +944,37 @@ function VariantPicker({
 /* ------------------------------ Encaissement ------------------------------- */
 function PaymentModal({
   total,
+  customers,
   onClose,
   onConfirm,
 }: {
   total: number;
+  customers: PosCustomer[];
   onClose: () => void;
   onConfirm: (
     method: PaymentMethod,
     received: number | null,
     reference: string | null,
+    customer?: PosCustomer | null,
+    paidNow?: number | null,
+    dueDate?: string | null,
   ) => Promise<void>;
 }) {
   const [method, setMethod] = useState<PaymentMethod>("CASH");
   const [received, setReceived] = useState<string>("");
   const [reference, setReference] = useState("");
+  const [customerId, setCustomerId] = useState("");
+  const [paidStr, setPaidStr] = useState(""); // vide = total (comptant)
+  const [dueDate, setDueDate] = useState("");
   const [busy, setBusy] = useState(false);
   const receivedNum = received ? Number(received.replace(",", ".")) : null;
   const change = changeDue(total, receivedNum);
+  const paidNow =
+    paidStr.trim() === "" ? null : Number(paidStr.replace(",", "."));
+  const credit =
+    paidNow != null && paidNow < total ? round2(total - paidNow) : 0;
+  const customer = customers.find((c) => c.id === customerId) ?? null;
+  const creditBlocked = credit > 1e-9 && !customer;
   const quick = [
     total,
     Math.ceil(total / 500) * 500,
@@ -783,15 +983,17 @@ function PaymentModal({
   ];
 
   const confirm = async () => {
-    if (method !== "CASH" && reference.trim().length < 3) {
-      return;
-    }
+    if (method !== "CASH" && reference.trim().length < 3) return;
+    if (creditBlocked) return;
     setBusy(true);
     try {
       await onConfirm(
         method,
         method === "CASH" ? receivedNum : total,
         method === "CASH" ? null : reference.trim(),
+        customer,
+        credit > 1e-9 && customer ? (paidNow ?? 0) : null,
+        credit > 1e-9 && dueDate ? dueDate : null,
       );
     } finally {
       setBusy(false);
@@ -808,7 +1010,9 @@ function PaymentModal({
           block
           loading={busy}
           onClick={confirm}
-          disabled={method !== "CASH" && reference.trim().length < 3}
+          disabled={
+            (method !== "CASH" && reference.trim().length < 3) || creditBlocked
+          }
         >
           ✅ Valider {formatMoney(total)}
         </Button>
@@ -818,6 +1022,25 @@ function PaymentModal({
         <span className="muted">À payer</span>
         <strong style={{ fontSize: "1.4rem" }}>{formatMoney(total)}</strong>
       </div>
+
+      <Field
+        label="Client (vente à crédit)"
+        hint="Sélectionnez le client pour vendre à crédit ou partiellement payé. Créez la fiche depuis l’espace gérant s’il est absent."
+      >
+        <Select
+          value={customerId}
+          onChange={(e) => setCustomerId(e.target.value)}
+        >
+          <option value="">— Comptant (sans client) —</option>
+          {customers.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name}
+              {c.balance > 0 ? ` — solde ${formatMoney(c.balance)}` : ""}
+            </option>
+          ))}
+        </Select>
+      </Field>
+
       <Field label="Mode de paiement" required>
         <Select
           value={method}
@@ -830,6 +1053,43 @@ function PaymentModal({
           ))}
         </Select>
       </Field>
+
+      {customer ? (
+        <>
+          <Field
+            label="Montant payé maintenant"
+            hint={`Vide = ${formatMoney(total)} (réglé en totalité). Saisissez une avance pour une vente partiellement payée, ou 0 pour une vente entièrement à crédit.`}
+          >
+            <Input
+              inputMode="decimal"
+              value={paidStr}
+              onChange={(e) => setPaidStr(e.target.value)}
+              placeholder={String(total)}
+            />
+          </Field>
+          {credit > 1e-9 ? (
+            <>
+              <div className="pay-change" style={{ marginBottom: 10 }}>
+                <span>Restera à payer</span>
+                <strong>{formatMoney(credit)}</strong>
+              </div>
+              <Field label="Échéance (optionnel)">
+                <Input
+                  type="date"
+                  value={dueDate}
+                  onChange={(e) => setDueDate(e.target.value)}
+                />
+              </Field>
+            </>
+          ) : null}
+        </>
+      ) : null}
+      {creditBlocked ? (
+        <p style={{ color: "var(--danger)", fontWeight: 600, marginTop: 8 }}>
+          ⚠️ Un acompte inférieur au total exige de sélectionner un client
+          (vente à crédit).
+        </p>
+      ) : null}
 
       {method === "CASH" ? (
         <>
@@ -926,6 +1186,23 @@ function SaleSuccess({ sold, onNew }: { sold: SoldState; onNew: () => void }) {
             Stock déduit · {METHODS.find((m) => m.id === sold.method)?.label}
           </Badge>
         )}
+        {sold.customerName ? (
+          <p className="muted" style={{ margin: 0 }}>
+            Client : <strong>{sold.customerName}</strong>
+          </p>
+        ) : null}
+        {(sold.outstanding ?? 0) > 0 ? (
+          <>
+            <Badge tone="warn">Vente à crédit</Badge>
+            <p style={{ margin: 0, fontWeight: 700, color: "var(--warn)" }}>
+              Reste à payer : {formatMoney(sold.outstanding ?? 0)}
+            </p>
+            <p className="muted" style={{ margin: 0, fontSize: "0.82rem" }}>
+              Payé : {formatMoney(round2(sold.total - (sold.outstanding ?? 0)))}{" "}
+              · l'encaissement du solde se fait depuis la fiche client.
+            </p>
+          </>
+        ) : null}
         {sold.method === "CASH" && sold.received != null ? (
           <p className="muted" style={{ margin: 0 }}>
             Reçu {formatMoney(sold.received)} · monnaie{" "}
@@ -1020,5 +1297,190 @@ function SaleSuccess({ sold, onNew }: { sold: SoldState; onNew: () => void }) {
         ) : null}
       </div>
     </div>
+  );
+}
+
+/* ======================== CAPTURE IMEI (PRODUIT SÉRIALISÉ) ================= */
+/** Modale de saisie des numéros de série vendus : chaque article d'un produit
+ *  sérialisé (téléphone, électronique…) est identifié par SON numéro (garantie,
+ *  vol, SAV). En ligne, les numéros disponibles du dépôt sont proposés (puis
+ *  vérifiés serveur à l'encaissement — l'API reste l'autorité). */
+function SerialPickerModal({
+  productName,
+  variantName,
+  productId,
+  depotId,
+  online,
+  initial,
+  onConfirm,
+  onClose,
+}: {
+  productName: string;
+  variantName: string | null;
+  productId: string;
+  depotId: string;
+  online: boolean;
+  initial: string[];
+  onConfirm: (serials: string[]) => void;
+  onClose: () => void;
+}) {
+  const { show } = useToast();
+  const [selected, setSelected] = useState<string[]>(initial);
+  const [entry, setEntry] = useState("");
+  const [available, setAvailable] = useState<SerialRow[] | null>(null);
+  const entryRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    entryRef.current?.focus();
+    if (!online || !depotId) return;
+    get<{ rows: SerialRow[] }>(
+      `/serials/product/${productId}?depotId=${depotId}`,
+    )
+      .then((r) => setAvailable(r.rows))
+      .catch(() => setAvailable([]));
+  }, [online, depotId, productId]);
+
+  const addSerial = (raw: string) => {
+    const s = raw.trim();
+    if (!s) return;
+    if (selected.some((x) => x.toLowerCase() === s.toLowerCase())) {
+      show(`Le numéro « ${s} » est déjà dans la liste.`, "error");
+      return;
+    }
+    setSelected((prev) => [...prev, s]);
+    setEntry("");
+    entryRef.current?.focus();
+  };
+
+  const suggestions = (available ?? []).filter(
+    (r) => !selected.some((s) => s.toLowerCase() === r.serial.toLowerCase()),
+  );
+
+  return (
+    <Modal
+      title={`🔢 Numéros de série — ${productName}${variantName ? ` · ${variantName}` : ""}`}
+      onClose={onClose}
+      wide
+      footer={
+        <>
+          <Button variant="outline" onClick={onClose}>
+            Annuler
+          </Button>
+          <Button
+            onClick={() => onConfirm(selected)}
+            disabled={selected.length === 0}
+          >
+            Valider ({selected.length} article
+            {selected.length > 1 ? "s" : ""})
+          </Button>
+        </>
+      }
+    >
+      <p className="muted" style={{ marginTop: 0 }}>
+        Chaque article vendu doit être identifié par son IMEI / n° de série
+        (garantie & SAV). Scannez ou saisissez un numéro puis Entrée.
+      </p>
+      <Field label="Ajouter un numéro (douchette ou saisie)">
+        <input
+          ref={entryRef}
+          className="input"
+          value={entry}
+          onChange={(e) => setEntry(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              addSerial(entry);
+            }
+          }}
+          placeholder="Ex. : 3567…"
+          autoFocus
+        />
+      </Field>
+      {selected.length > 0 ? (
+        <div style={{ margin: "10px 0" }}>
+          <strong style={{ fontSize: "0.85rem" }}>
+            Sélectionnés ({selected.length}) :
+          </strong>
+          <div
+            className="row"
+            style={{ flexWrap: "wrap", gap: 6, marginTop: 6 }}
+          >
+            {selected.map((s) => (
+              <span
+                key={s}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 4,
+                  border: "1px solid var(--line, #e2e8f0)",
+                  borderRadius: 999,
+                  padding: "2px 8px",
+                  fontFamily: "monospace",
+                  fontSize: "0.8rem",
+                }}
+              >
+                {s}
+                <button
+                  type="button"
+                  aria-label={`Retirer ${s}`}
+                  onClick={() =>
+                    setSelected((prev) => prev.filter((x) => x !== s))
+                  }
+                  style={{
+                    border: "none",
+                    background: "none",
+                    cursor: "pointer",
+                    padding: 0,
+                  }}
+                >
+                  ✕
+                </button>
+              </span>
+            ))}
+          </div>
+        </div>
+      ) : null}
+      {online && available !== null ? (
+        <div style={{ marginTop: 12 }}>
+          <strong style={{ fontSize: "0.85rem" }}>
+            Disponibles dans le dépôt ({suggestions.length}) :
+          </strong>
+          {suggestions.length === 0 ? (
+            <p className="muted" style={{ fontSize: "0.85rem" }}>
+              {available.length === 0
+                ? "Aucun numéro enregistré en stock pour ce produit."
+                : "Tous les numéros disponibles sont déjà sélectionnés."}
+            </p>
+          ) : (
+            <div
+              className="row"
+              style={{
+                flexWrap: "wrap",
+                gap: 6,
+                marginTop: 6,
+                maxHeight: 180,
+                overflowY: "auto",
+              }}
+            >
+              {suggestions.map((r) => (
+                <Button
+                  key={r.id}
+                  variant="outline"
+                  size="sm"
+                  onClick={() => addSerial(r.serial)}
+                >
+                  <span style={{ fontFamily: "monospace" }}>{r.serial}</span>
+                </Button>
+              ))}
+            </div>
+          )}
+        </div>
+      ) : (
+        <p className="muted" style={{ fontSize: "0.85rem", marginTop: 12 }}>
+          📴 Hors-ligne : saisissez les numéros à la main — ils seront vérifiés
+          automatiquement lors de la synchronisation.
+        </p>
+      )}
+    </Modal>
   );
 }

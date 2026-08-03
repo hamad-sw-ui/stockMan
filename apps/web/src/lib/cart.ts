@@ -21,6 +21,8 @@ export interface CartProduct {
   unitId?: string | null;
   unitSymbol?: string | null;
   barcode?: string | null;
+  /** Produit sérialisé (IMEI) : vente à l'unité identifiée, numéros obligatoires. */
+  requiresSerial?: boolean;
 }
 
 export interface CartVariant {
@@ -37,6 +39,8 @@ export interface CartLineInput {
   unit?: CartUnit | null;
   quantity: number;
   discountPct?: number;
+  /** Numéros de série vendus (produit sérialisé : quantity = serialNumbers.length). */
+  serialNumbers?: string[] | null;
 }
 
 export interface CartLine extends CartLineInput {
@@ -70,7 +74,14 @@ export function effectiveUnitPrice(input: CartLineInput): number {
 
 export function makeLine(input: CartLineInput): CartLine {
   const factor = unitFactor(input.product, input.unit);
-  const quantity = input.quantity > 0 ? input.quantity : 1;
+  // Produit sérialisé : la quantité est PILOTÉE par les numéros saisis
+  // (1 numéro = 1 article) — invariant aligné sur l'API.
+  const quantity =
+    input.product.requiresSerial && input.serialNumbers != null
+      ? input.serialNumbers.length
+      : input.quantity > 0
+        ? input.quantity
+        : 1;
   const discount = Math.min(Math.max(input.discountPct ?? 0, 0), 100);
   const unitPrice = effectiveUnitPrice({ ...input, quantity });
   return {

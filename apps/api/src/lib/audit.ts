@@ -22,7 +22,18 @@ export interface AuditEntry {
     | "CONFIG"
     | "LICENSE"
     | "IMPORT"
-    | "MIGRATION";
+    | "MIGRATION"
+    | "REVALUE"
+    | "PAYMENT"
+    | "REMIND"
+    | "QUOTE"
+    | "PURCHASE_ORDER"
+    | "SUPPLIER_RETURN"
+    | "CAMPAIGN"
+    | "SESSION"
+    | "INVOICE"
+    | "SERIAL"
+    | "PRICE";
   entity: string;
   entityId?: string | null;
   previousState?: unknown;

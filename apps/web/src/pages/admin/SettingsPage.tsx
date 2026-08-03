@@ -15,7 +15,11 @@ import { patch, post, put } from "../../lib/http";
 import { invalidateQueries, useQuery } from "../../lib/query";
 import { useAuth } from "../../store/auth";
 import { useToast } from "../../store/toast";
-import type { NotificationSettings, TenantCurrent } from "../../lib/types";
+import type {
+  NotificationSettings,
+  TenantConfigRow,
+  TenantCurrent,
+} from "../../lib/types";
 
 /* --------------------------------- Entreprise ------------------------------ */
 function CompanyTab() {
@@ -28,6 +32,10 @@ function CompanyTab() {
     primaryColor: "#059669",
     currency: "FCFA",
     timezone: "Africa/Douala",
+    niu: "",
+    rccm: "",
+    address: "",
+    invoiceFooter: "",
   });
   const [logo, setLogo] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -41,6 +49,10 @@ function CompanyTab() {
         primaryColor: q.data.primary_color ?? "#059669",
         currency: q.data.currency ?? "FCFA",
         timezone: q.data.timezone ?? "Africa/Douala",
+        niu: q.data.niu ?? "",
+        rccm: q.data.rccm ?? "",
+        address: q.data.address ?? "",
+        invoiceFooter: q.data.invoice_footer ?? "",
       });
       setLogo(q.data.logo);
     }
@@ -81,6 +93,10 @@ function CompanyTab() {
         currency: form.currency,
         timezone: form.timezone,
         logo,
+        niu: form.niu || null,
+        rccm: form.rccm || null,
+        address: form.address || null,
+        invoiceFooter: form.invoiceFooter || null,
       });
       invalidateQueries("tenant:");
       await refreshUser(); // applique la nouvelle couleur/logo à toute l'UI
@@ -97,101 +113,212 @@ function CompanyTab() {
 
   if (q.loading) return <Spinner label="Chargement…" />;
   return (
-    <Card title="Profil de l’entreprise">
-      <div className="grid">
-        <div
-          className="row"
-          style={{ alignItems: "flex-end", flexWrap: "wrap" }}
-        >
+    <>
+      <Card title="Profil de l’entreprise">
+        <div className="grid">
           <div
-            className="avatar"
-            style={{ width: 84, height: 84, fontSize: "2.4rem" }}
+            className="row"
+            style={{ alignItems: "flex-end", flexWrap: "wrap" }}
           >
-            {logo ? <img src={logo} alt="Logo de l’entreprise" /> : "🏪"}
-          </div>
-          <div>
-            <input
-              ref={fileRef}
-              type="file"
-              accept="image/*"
-              hidden
-              onChange={(e) => pickLogo(e.target.files?.[0])}
-            />
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => fileRef.current?.click()}
+            <div
+              className="avatar"
+              style={{ width: 84, height: 84, fontSize: "2.4rem" }}
             >
-              Changer le logo
-            </Button>{" "}
-            {logo ? (
-              <Button variant="ghost" size="sm" onClick={() => setLogo(null)}>
-                Retirer
-              </Button>
-            ) : null}
-            <p className="muted" style={{ fontSize: "0.82rem" }}>
-              PNG/JPG, redimensionné à 192 px automatiquement.
-            </p>
+              {logo ? <img src={logo} alt="Logo de l’entreprise" /> : "🏪"}
+            </div>
+            <div>
+              <input
+                ref={fileRef}
+                type="file"
+                accept="image/*"
+                hidden
+                onChange={(e) => pickLogo(e.target.files?.[0])}
+              />
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => fileRef.current?.click()}
+              >
+                Changer le logo
+              </Button>{" "}
+              {logo ? (
+                <Button variant="ghost" size="sm" onClick={() => setLogo(null)}>
+                  Retirer
+                </Button>
+              ) : null}
+              <p className="muted" style={{ fontSize: "0.82rem" }}>
+                PNG/JPG, redimensionné à 192 px automatiquement.
+              </p>
+            </div>
           </div>
-        </div>
-        <div className="row" style={{ flexWrap: "wrap" }}>
-          <Field label="Nom affiché" required>
+          <div className="row" style={{ flexWrap: "wrap" }}>
+            <Field label="Nom affiché" required>
+              <Input
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+              />
+            </Field>
+            <Field label="Téléphone (reçus & support)">
+              <Input
+                value={form.phone}
+                onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                placeholder="+237 6XX XXX XXX"
+              />
+            </Field>
+          </div>
+          <div className="row" style={{ flexWrap: "wrap" }}>
+            <Field label="Couleur principale (white-label)">
+              <input
+                type="color"
+                value={form.primaryColor}
+                onChange={(e) =>
+                  setForm({ ...form, primaryColor: e.target.value })
+                }
+                style={{
+                  width: 64,
+                  height: 42,
+                  padding: 2,
+                  border: "1px solid var(--border)",
+                  borderRadius: 10,
+                }}
+                aria-label="Couleur principale"
+              />
+              <code className="muted">{form.primaryColor}</code>
+            </Field>
+            <Field label="Devise">
+              <Select
+                value={form.currency}
+                onChange={(e) => setForm({ ...form, currency: e.target.value })}
+              >
+                <option value="FCFA">FCFA (XAF)</option>
+                <option value="FCFA-BCEAO">FCFA (XOF)</option>
+              </Select>
+            </Field>
+            <Field label="Fuseau horaire">
+              <Select
+                value={form.timezone}
+                onChange={(e) => setForm({ ...form, timezone: e.target.value })}
+              >
+                <option value="Africa/Douala">Afrique/Douala (UTC+1)</option>
+                <option value="Africa/Lagos">Afrique/Lagos (UTC+1)</option>
+                <option value="Africa/Abidjan">Afrique/Abidjan (UTC)</option>
+              </Select>
+            </Field>
+          </div>
+
+          {/* Mentions légales obligatoires (facturation Cameroun, E7) */}
+          <div className="row" style={{ flexWrap: "wrap" }}>
+            <Field
+              label="NIU (n° contribuable)"
+              hint="Numéro d'identifiant unique — DGI."
+            >
+              <Input
+                value={form.niu}
+                onChange={(e) => setForm({ ...form, niu: e.target.value })}
+                placeholder="M0624XXXXXXXXX"
+              />
+            </Field>
+            <Field label="RCCM">
+              <Input
+                value={form.rccm}
+                onChange={(e) => setForm({ ...form, rccm: e.target.value })}
+                placeholder="RC/YAO/2024/B/0000"
+              />
+            </Field>
+            <Field label="Adresse (siège / boutique)">
+              <Input
+                value={form.address}
+                onChange={(e) => setForm({ ...form, address: e.target.value })}
+                placeholder="Quartier, ville"
+              />
+            </Field>
+          </div>
+          <Field
+            label="Pied de facture"
+            hint="Mention imprimée en bas de chaque facture et reçu."
+          >
             <Input
-              value={form.name}
-              onChange={(e) => setForm({ ...form, name: e.target.value })}
-            />
-          </Field>
-          <Field label="Téléphone (reçus & support)">
-            <Input
-              value={form.phone}
-              onChange={(e) => setForm({ ...form, phone: e.target.value })}
-              placeholder="+237 6XX XXX XXX"
-            />
-          </Field>
-        </div>
-        <div className="row" style={{ flexWrap: "wrap" }}>
-          <Field label="Couleur principale (white-label)">
-            <input
-              type="color"
-              value={form.primaryColor}
+              value={form.invoiceFooter}
               onChange={(e) =>
-                setForm({ ...form, primaryColor: e.target.value })
+                setForm({ ...form, invoiceFooter: e.target.value })
               }
-              style={{
-                width: 64,
-                height: 42,
-                padding: 2,
-                border: "1px solid var(--border)",
-                borderRadius: 10,
-              }}
-              aria-label="Couleur principale"
+              placeholder="Ex. Marchandises ni reprises ni échangées."
             />
-            <code className="muted">{form.primaryColor}</code>
-          </Field>
-          <Field label="Devise">
-            <Select
-              value={form.currency}
-              onChange={(e) => setForm({ ...form, currency: e.target.value })}
-            >
-              <option value="FCFA">FCFA (XAF)</option>
-              <option value="FCFA-BCEAO">FCFA (XOF)</option>
-            </Select>
-          </Field>
-          <Field label="Fuseau horaire">
-            <Select
-              value={form.timezone}
-              onChange={(e) => setForm({ ...form, timezone: e.target.value })}
-            >
-              <option value="Africa/Douala">Afrique/Douala (UTC+1)</option>
-              <option value="Africa/Lagos">Afrique/Lagos (UTC+1)</option>
-              <option value="Africa/Abidjan">Afrique/Abidjan (UTC)</option>
-            </Select>
           </Field>
         </div>
-      </div>
-      <div className="row" style={{ marginTop: 10 }}>
-        <Button loading={saving} onClick={save} disabled={!form.name.trim()}>
-          Enregistrer
+        <div className="row" style={{ marginTop: 10 }}>
+          <Button loading={saving} onClick={save} disabled={!form.name.trim()}>
+            Enregistrer
+          </Button>
+        </div>
+      </Card>
+      <CashPrefsCard />
+    </>
+  );
+}
+
+/* ------------------------- Préférences de caisse (E6) --------------------- */
+/** Interrupteur « session de caisse obligatoire » : quand actif, vendre ou
+ *  encaisser hors session ouverte est refusé par le serveur. */
+function CashPrefsCard() {
+  const { show } = useToast();
+  const q = useQuery<TenantConfigRow[]>("configs:tenant", "/configs/tenant");
+  const current =
+    q.data?.find((c) => c.key === "cash_session_required")?.value === "true";
+  const [value, setValue] = useState<boolean | null>(null);
+  const [saving, setSaving] = useState(false);
+  const effective = value ?? current;
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      await put("/configs/tenant", {
+        key: "cash_session_required",
+        value: effective ? "true" : "false",
+      });
+      invalidateQueries("configs:tenant");
+      invalidateQueries("cash:");
+      show(
+        effective
+          ? "Session de caisse désormais OBLIGATOIRE pour vendre."
+          : "Vente hors session de caisse de nouveau autorisée.",
+        "success",
+      );
+    } catch (e) {
+      show(
+        e instanceof Error ? e.message : "Enregistrement impossible",
+        "error",
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (q.loading && !q.data) return null;
+  return (
+    <Card title="Caisse — session obligatoire">
+      <div className="row" style={{ alignItems: "flex-end", flexWrap: "wrap" }}>
+        <Field
+          label="Vente et encaissement uniquement en caisse ouverte"
+          hint="Recommandé dès qu'un tiroir-caisse physique existe : les écarts sont alors contrôlés à chaque clôture (Z)."
+        >
+          <Select
+            value={effective ? "true" : "false"}
+            onChange={(e) => setValue(e.target.value === "true")}
+          >
+            <option value="false">Non — vendre librement (défaut)</option>
+            <option value="true">
+              Oui — exiger une session de caisse ouverte
+            </option>
+          </Select>
+        </Field>
+        <Button
+          size="sm"
+          loading={saving}
+          onClick={save}
+          disabled={value === null || value === current}
+        >
+          Appliquer
         </Button>
       </div>
     </Card>

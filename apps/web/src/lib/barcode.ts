@@ -115,3 +115,107 @@ export function code39Bars(
   });
   return { bars, width: x, height };
 }
+
+/**
+ * Code-barres EAN-13 (E8) — norme GS1 des produits du commerce (scan rapide,
+ * compatibilité caisses/douchettes). Un EAN-13 = 12 chiffres + 1 chiffre de
+ * contrôle ; il est imprimable sur toute étiqueteuse standard.
+ */
+
+/** Chiffre de contrôle GS1 : pondération 1/3 alternée depuis la gauche. */
+export function ean13Checksum(digits12: string): number {
+  if (!/^\d{12}$/.test(digits12))
+    throw new Error(`EAN-13 : 12 chiffres attendus, reçu « ${digits12} ».`);
+  let sum = 0;
+  for (let i = 0; i < 12; i += 1) {
+    sum += Number(digits12[i]) * (i % 2 === 0 ? 1 : 3);
+  }
+  return (10 - (sum % 10)) % 10;
+}
+
+/** Code complet à 13 chiffres valide (chiffre de contrôle concordant) ? */
+export function isValidEan13(code: string): boolean {
+  if (!/^\d{13}$/.test(code)) return false;
+  return ean13Checksum(code.slice(0, 12)) === Number(code[12]);
+}
+
+/* Motifs binaires des chiffres (1 = barre) — 7 modules par chiffre. */
+const L_PATTERNS = [
+  "0001101",
+  "0011001",
+  "0010011",
+  "0111101",
+  "0100011",
+  "0110001",
+  "0101111",
+  "0111011",
+  "0110111",
+  "0001011",
+];
+const G_PATTERNS = L_PATTERNS.map((p) => [...p].reverse().join(""));
+const R_PATTERNS = L_PATTERNS.map((p) =>
+  [...p].map((b) => (b === "1" ? "0" : "1")).join(""),
+);
+/* Parités gauches selon le 1er chiffre (L = impair, G = pair). */
+const PARITY: Record<string, string> = {
+  "0": "LLLLLL",
+  "1": "LLGLGG",
+  "2": "LLGGLG",
+  "3": "LLGGGL",
+  "4": "LGLLGG",
+  "5": "LGGLLG",
+  "6": "LGGGLL",
+  "7": "LGLGLG",
+  "8": "LGLGGL",
+  "9": "LGGLGL",
+};
+
+/**
+ * Motif binaire complet (95 modules) : garde 101 + 6 chiffres gauches selon
+ * parité + garde centrale 01010 + 6 chiffres droits en R + garde 101.
+ * @throws Error si le code n'est pas un EAN-13 valide.
+ */
+export function ean13Bits(code: string): string {
+  if (!isValidEan13(code))
+    throw new Error(
+      `EAN-13 invalide : « ${code} » (13 chiffres, chiffre de contrôle concordant requis — reçu ${ean13Checksum(code.slice(0, 12))} attendu en position 13 si les 12 premiers chiffres sont exacts).`,
+    );
+  const parity = PARITY[code[0]!]!;
+  let bits = "101";
+  for (let i = 1; i <= 6; i += 1) {
+    const d = Number(code[i]);
+    bits += parity[i - 1] === "L" ? L_PATTERNS[d] : G_PATTERNS[d];
+  }
+  bits += "01010";
+  for (let i = 7; i <= 12; i += 1) {
+    bits += R_PATTERNS[Number(code[i])];
+  }
+  return bits + "101";
+}
+
+/** Barres prêtes pour un rendu SVG (module = 1). */
+export function ean13Bars(
+  code: string,
+  height = 40,
+): {
+  bars: Array<{ x: number; w: number; h: number }>;
+  width: number;
+  height: number;
+} {
+  const bits = ean13Bits(code);
+  const bars: Array<{ x: number; w: number; h: number }> = [];
+  let x = 0;
+  let run = 0;
+  for (let i = 0; i < bits.length; i += 1) {
+    if (bits[i] === "1") {
+      run += 1;
+      // fin de séquence de barres ?
+      if (bits[i + 1] !== "1") {
+        bars.push({ x: x - run + 1, w: run, h: height });
+        run = 0;
+      }
+    }
+    x += 1;
+  }
+  return { bars, width: bits.length, height };
+}

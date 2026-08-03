@@ -1,19 +1,28 @@
-/** Rendu SVG d'un code-barres Code 39 (+ texte lisible optionnel). */
+/** Rendu SVG d'un code-barres Code 39 ou EAN-13 (+ texte lisible optionnel).
+ *  `format: "auto"` (défaut) : EAN-13 si le code est un EAN-13 valide,
+ *  Code 39 sinon. */
 import { useMemo } from "react";
-import { code39Bars } from "../lib/barcode";
+import { code39Bars, ean13Bars, isValidEan13 } from "../lib/barcode";
 
 export function BarcodeSvg({
   value,
   height = 46,
   withText = true,
   className = "",
+  format = "auto",
 }: {
   value: string;
   height?: number;
   withText?: boolean;
   className?: string;
+  format?: "auto" | "code39" | "ean13";
 }) {
-  const data = useMemo(() => code39Bars(value, height), [value, height]);
+  const useEan =
+    format === "ean13" || (format === "auto" && isValidEan13(value));
+  const data = useMemo(
+    () => (useEan ? ean13Bars(value, height) : code39Bars(value, height)),
+    [value, height, useEan],
+  );
   const totalH = data.height + (withText ? 12 : 0);
   const label = value.toUpperCase();
   return (

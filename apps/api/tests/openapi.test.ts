@@ -28,6 +28,14 @@ const MOUNTS: Array<[string, string]> = [
   ["notifications.ts", "/api/notifications"],
   ["configs.ts", "/api/configs"],
   ["audit.ts", "/api/audit-logs"],
+  ["customers.ts", "/api/customers"],
+  ["quotes.ts", "/api/quotes"],
+  ["purchaseOrders.ts", "/api/purchase-orders"],
+  ["inventoryCampaigns.ts", "/api/inventory-campaigns"],
+  ["cashSessions.ts", "/api/cash-sessions"],
+  ["invoices.ts", "/api/invoices"],
+  ["serials.ts", "/api/serials"],
+  ["pricing.ts", "/api/pricing"],
   ["catalog.ts", "/api"],
 ];
 

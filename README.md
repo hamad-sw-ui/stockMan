@@ -65,17 +65,30 @@ npm run dev:web      # Web sur :5173 (vite, proxy → :5000)
 
 - **Caisse (PWA hors-ligne)** : catalogue en cache IndexedDB, scan douchette +
   caméra (`BarcodeDetector` natif), panier multi-unités (pièce/carton converti
-  serveur), variantes, remises, espèces/MoMo/OM (réf. opérateur), vente mise en
-  file sans réseau (`client_sale_id`) et **rejeu idempotent** (aucun doublon),
-  reçu thermique 80 mm + partage WhatsApp, rapport Z de clôture.
+  serveur), variantes, remises plafonnées par rôle, promotions datées
+  auto-appliquées, prix gros selon le client, espèces/MoMo/OM (réf. opérateur),
+  vente à crédit / paiement mixte, vente mise en file sans réseau
+  (`client_sale_id`) et **rejeu idempotent** (aucun doublon), capture **IMEI**
+  pour les produits sérialisés, reçu thermique 80 mm + partage WhatsApp,
+  **sessions de caisse** (fond, comptage, écart, Z verrouillé à la clôture).
+- **Gestion de stock professionnelle (E1→E8)** : valorisation **CUMP** et coût
+  figé par vente (marges historiques exactes), lots **FEFO** bout-en-bout
+  (blocage périmé, rappel lot → ventes), **clients & crédit** (plafond,
+  versements idempotents, relances SMS/WhatsApp, devis), **commandes
+  fournisseurs** (réceptions partielles, reliquats, OTIF, retours), **campagnes
+  d'inventaire** (aveugle, double validation, écarts valorisés), **factures
+  TVA légales** (numérotation continue, avoirs, exports comptables SYSCOHADA),
+  transferts avec transit visible et écarts, seuils par dépôt + rayonnages,
+  import CSV du stock initial, KPIs ABC/rotation/couverture/stock dormant.
 - **Admin** : dashboard (CA, top produits, alertes), catalogue CRUD +
-  **import/export CSV** + **étiquettes code-barres A4 (Code 39)**, catégories,
-  unités, dépôts & transferts à double validation, fournisseurs & réceptions
-  (lots FEFO), ajustements d'inventaire tracés, journal des mouvements (curseur),
-  ventes (annulation motifée, retours partiels, reçu), équipe (PIN bcrypt),
-  6 rapports (ventes, marges, valorisation, péremptions, prédictif 30 j, Z) avec
-  export CSV, centre de notifications, paramètres white-label, abonnement,
-  journal d'audit complet.
+  **import/export CSV** + **étiquettes code-barres A4 (Code 39 / EAN-13)**,
+  catégories, unités, dépôts & transferts à double validation, fournisseurs &
+  réceptions (lots FEFO), ajustements d'inventaire tracés, journal des
+  mouvements (curseur), ventes (annulation motifée, retours partiels, reçu),
+  équipe (PIN bcrypt), 10+ rapports (ventes, marges coût réel, valorisation
+  CUMP, péremptions, prédictif 30 j, COGS, KPIs stock, traçabilité lots,
+  journal TVA, Z) avec export CSV, promotions, centre de notifications,
+  paramètres white-label (dont NIU/RCCM), abonnement, journal d'audit complet.
 - **Console éditeur** : tenants (provisionnement, suspension, impersonation
   auditée), licences & plans (plafonds appliqués API-side, middleware 423 après
   grâce), configurations globales (secrets jamais renvoyés), supervision des
@@ -88,7 +101,7 @@ npm run dev:web      # Web sur :5173 (vite, proxy → :5000)
 
 | Commande             | Contenu                                                                                                                                                                             |
 | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `npm test`           | **136 tests** : 81 API (vitest + pg-mem, schéma V2 réel) + 55 web                                                                                                                   |
+| `npm test`           | **245 tests** : 181 API (vitest + pg-mem, schéma V001→V010 réel) + 64 web                                                                                                           |
 | `npm run typecheck`  | TypeScript strict, zéro `any` non maîtrisé                                                                                                                                          |
 | `npm run build`      | API (tsc → dist/) + Web (vite → dist/)                                                                                                                                              |
 | `npm run format`     | Prettier sur tout le dépôt                                                                                                                                                          |
@@ -115,7 +128,7 @@ dans l'audit. Détail : `docs/03_EXPLOITATION.md` §11.
 ```
 apps/api          Node 22 + Express 4 + TypeScript strict + pg (pool), zod
 apps/web          React 18 + Vite + PWA (Service Worker, IndexedDB), CSS custom
-database/         migrations V001-V003, seeds, legacy/ (Schéma V1 figé, reprise)
+database/         migrations V001-V010, seeds, legacy/ (Schéma V1 figé, reprise)
 scripts/          create-superadmin, reset-user-password, backup.sh, migrate-v1-to-v2
 deploy/           exemple nginx public (TLS), compose.yml racine
 docs/             audit, matrice des interfaces, plan, runbook, référence API
@@ -127,10 +140,11 @@ deploy/ci.yml     Définition CI complète (5 jobs) — à activer, voir encadr�
 | Document                                                           | Contenu                                                                     |
 | ------------------------------------------------------------------ | --------------------------------------------------------------------------- |
 | [`docs/00_AUDIT_GLOBAL.md`](docs/00_AUDIT_GLOBAL.md)               | Audit initial (41 constats) qui a motivé la refonte                         |
-| [`docs/01_MATRICE_INTERFACES.md`](docs/01_MATRICE_INTERFACES.md)   | 29 écrans livrés, couverture CRUD par ressource                             |
+| [`docs/01_MATRICE_INTERFACES.md`](docs/01_MATRICE_INTERFACES.md)   | 42 écrans livrés (v2.1), couverture CRUD par ressource                      |
 | [`docs/02_PLAN_IMPLEMENTATION.md`](docs/02_PLAN_IMPLEMENTATION.md) | Plan en 8 phases — appliqué à 100 %                                         |
 | [`docs/03_EXPLOITATION.md`](docs/03_EXPLOITATION.md)               | Runbook prod : déploiement, sauvegardes, secrets, dépannage, **reprise V1** |
 | [`docs/04_API.md`](docs/04_API.md)                                 | Guide d'intégration API (+ spec OpenAPI 3 servie sur `/api/openapi.json`)   |
+| [`docs/05_AUDIT_EXPERT_STOCK.md`](docs/05_AUDIT_EXPERT_STOCK.md)   | Audit métier expert → phases E1→E8 (CUMP, FEFO, crédit, TVA…) — **livrées** |
 
 ## Variables d'environnement (essentielles)
 

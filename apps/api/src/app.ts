@@ -21,6 +21,14 @@ import reportRoutes from "./routes/reports";
 import notificationRoutes from "./routes/notifications";
 import configRoutes from "./routes/configs";
 import auditRoutes from "./routes/audit";
+import customerRoutes from "./routes/customers";
+import quoteRoutes from "./routes/quotes";
+import inventoryCampaignRoutes from "./routes/inventoryCampaigns";
+import purchaseOrderRoutes from "./routes/purchaseOrders";
+import cashSessionRoutes from "./routes/cashSessions";
+import invoiceRoutes from "./routes/invoices";
+import serialRoutes from "./routes/serials";
+import pricingRoutes from "./routes/pricing";
 
 export function buildApp() {
   const env = getEnv();
@@ -85,6 +93,14 @@ export function buildApp() {
   app.use("/api/auth", authRoutes);
   app.use("/api/pos", posRoutes);
   app.use("/api/sales", saleRoutes);
+  app.use("/api/customers", customerRoutes);
+  app.use("/api/quotes", quoteRoutes);
+  app.use("/api/purchase-orders", purchaseOrderRoutes);
+  app.use("/api/inventory-campaigns", inventoryCampaignRoutes);
+  app.use("/api/cash-sessions", cashSessionRoutes);
+  app.use("/api/invoices", invoiceRoutes);
+  app.use("/api/serials", serialRoutes);
+  app.use("/api/pricing", pricingRoutes);
   app.use("/api/stock", stockOpsRoutes);
   app.use("/api/products", productRoutes);
   app.use("/api/users", userRoutes);

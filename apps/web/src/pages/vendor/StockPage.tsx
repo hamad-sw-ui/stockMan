@@ -19,9 +19,14 @@ interface DepotStockRow {
   name: string;
   barcode: string | null;
   selling_price: number;
+  /** Seuil d'alerte effectif (surcharge du dépôt si définie, sinon catalogue). */
   min_stock_level: number;
+  /** Emplacement de rayonnage dans le dépôt (facilite le picking). */
+  bin_location: string | null;
   unit_symbol: string | null;
   quantity: number;
+  /** Stock réservé (commandes clients confirmées non livrées) — E8. */
+  reserved_qty?: number;
 }
 
 export default function StockPage() {
@@ -102,9 +107,26 @@ export default function StockPage() {
                           {r.barcode}
                         </code>
                       ) : null}
+                      {r.bin_location ? (
+                        <div className="muted" style={{ fontSize: "0.78rem" }}>
+                          📍 {r.bin_location}
+                        </div>
+                      ) : null}
                     </td>
                     <td className="num" style={{ fontWeight: 700 }}>
-                      {formatQty(r.quantity)} {r.unit_symbol ?? ""}
+                      {formatQty(
+                        Math.max(r.quantity - (r.reserved_qty ?? 0), 0),
+                      )}{" "}
+                      {r.unit_symbol ?? ""}
+                      {(r.reserved_qty ?? 0) > 0 ? (
+                        <div
+                          className="muted"
+                          style={{ fontSize: "0.78rem", fontWeight: 400 }}
+                          title="Stock réservé : commandes clients confirmées non encore livrées"
+                        >
+                          dont {formatQty(r.reserved_qty!)} réservé(s)
+                        </div>
+                      ) : null}
                     </td>
                     <td>
                       {r.quantity <= 0 ? (

@@ -47,6 +47,7 @@ router.get(
     if (!q.includeInactive) conds.push("usr.is_active");
     const r = await query(
       `SELECT usr.id, usr.name, usr.email, usr.role, usr.is_active, usr.depot_id, usr.created_at,
+              usr.max_discount_pct::float,
               d.name AS depot_name, (usr.pin_hash IS NOT NULL) AS has_pin
          FROM users usr LEFT JOIN depots d ON d.id = usr.depot_id
         WHERE ${conds.join(" AND ")}
@@ -65,6 +66,9 @@ const createUserSchema = z.object({
   password: passwordSchema.optional(),
   pin: pinSchema.nullish(),
   depotId: z.string().uuid().nullish(),
+  /** E8 — plafond de remise manuelle à la caisse (NULL = défaut rôle :
+   *  10 % vendeur, 100 % gérant). */
+  maxDiscountPct: z.coerce.number().min(0).max(100).nullish(),
 });
 
 /** Vérifie l'unicité fonctionnelle du PIN dans le tenant (hash bcrypt ≠ index). */
@@ -125,8 +129,8 @@ router.post(
         ? await bcrypt.hash(b.pin, env.BCRYPT_ROUNDS)
         : null;
       const r = await client.query(
-        `INSERT INTO users (tenant_id, name, email, password_hash, role, depot_id, pin_hash)
-         VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id, name, email, role, depot_id`,
+        `INSERT INTO users (tenant_id, name, email, password_hash, role, depot_id, pin_hash, max_discount_pct)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id, name, email, role, depot_id, max_discount_pct`,
         [
           u.tenantId,
           b.name,
@@ -135,6 +139,7 @@ router.post(
           b.role,
           b.depotId ?? null,
           pinHash,
+          b.maxDiscountPct ?? null,
         ],
       );
       await writeAudit(
@@ -184,8 +189,10 @@ router.patch(
     }
     const r = await query(
       `UPDATE users SET name=COALESCE($3,name), email=COALESCE($4,email), role=COALESCE($5,role),
-              depot_id=COALESCE($6,depot_id), updated_at=now()
-        WHERE id=$1 AND tenant_id=$2 RETURNING id, name, email, role, depot_id`,
+              depot_id=COALESCE($6,depot_id),
+              max_discount_pct=CASE WHEN $7::boolean THEN $8 ELSE max_discount_pct END,
+              updated_at=now()
+        WHERE id=$1 AND tenant_id=$2 RETURNING id, name, email, role, depot_id, max_discount_pct`,
       [
         req.params.id!,
         u.tenantId,
@@ -193,6 +200,8 @@ router.patch(
         b.email ? b.email.toLowerCase() : null,
         b.role ?? null,
         b.depotId ?? null,
+        b.maxDiscountPct !== undefined, // NULL explicite = retour au défaut rôle
+        b.maxDiscountPct ?? null,
       ],
     );
     await writeAudit({

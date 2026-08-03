@@ -50,6 +50,33 @@ function registerShims(db: IMemoryDb) {
     implementation: () => true,
     impure: true,
   });
+
+  // --- Transactions SQL réelles (BEGIN/COMMIT/ROLLBACK) --------------------
+  // L'adaptateur pg de pg-mem exécute chaque client.query() dans un contexte
+  // NEUF : le BEGIN fourché n'est jamais repris par les requêtes suivantes —
+  // le ROLLBACK devenait lettre morte et les écritures d'une transaction
+  // échouée FUAIENT en base de test (bug masqué pendant longtemps, démasqué
+  // par la garde STOCK_RESERVED d'E8). On implémente donc la sémantique
+  // transactionnelle via les points de restauration natifs (pile pour le
+  // cas — rare — de transactions imbriquées).
+  const snapshots: Array<{ restore(): void }> = [];
+  pub.interceptQueries((sql) => {
+    const stmt = sql.trim().replace(/;+$/, "").toUpperCase();
+    if (stmt === "BEGIN" || stmt === "START TRANSACTION") {
+      snapshots.push(db.backup());
+      return [];
+    }
+    if (stmt === "COMMIT" || stmt === "END") {
+      snapshots.pop(); // engagé : le point de restauration est libéré
+      return [];
+    }
+    if (stmt === "ROLLBACK" || stmt === "ABORT") {
+      const snap = snapshots.pop();
+      if (snap) snap.restore();
+      return [];
+    }
+    return null; // exécution normale
+  });
 }
 
 export async function createTestContext(): Promise<TestContext> {

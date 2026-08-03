@@ -30,7 +30,14 @@ interface SupplierDetail extends Supplier {
   }>;
 }
 
-const blank = { name: "", email: "", phone: "", address: "", notes: "" };
+const blank = {
+  name: "",
+  email: "",
+  phone: "",
+  address: "",
+  notes: "",
+  leadTime: "",
+};
 
 export default function SuppliersPage() {
   const { show } = useToast();
@@ -53,6 +60,7 @@ export default function SuppliersPage() {
         phone: form.phone || null,
         address: form.address || null,
         notes: form.notes || null,
+        defaultLeadTimeDays: form.leadTime ? Number(form.leadTime) : undefined,
       };
       if (form.id) await patch(`/suppliers/${form.id}`, body);
       else await post("/suppliers", body);
@@ -146,6 +154,7 @@ export default function SuppliersPage() {
                   <th>Nom</th>
                   <th>Téléphone</th>
                   <th>Email</th>
+                  <th className="num">Délai</th>
                   <th className="num">Réceptions</th>
                   <th aria-label="Actions" />
                 </tr>
@@ -164,6 +173,11 @@ export default function SuppliersPage() {
                     </td>
                     <td className="muted">{s.phone ?? "—"}</td>
                     <td className="muted">{s.email ?? "—"}</td>
+                    <td className="num muted">
+                      {s.default_lead_time_days != null
+                        ? `${s.default_lead_time_days} j`
+                        : "—"}
+                    </td>
                     <td className="num">{s.receipt_count ?? 0}</td>
                     <td>
                       <div
@@ -181,6 +195,10 @@ export default function SuppliersPage() {
                               phone: s.phone ?? "",
                               address: s.address ?? "",
                               notes: s.notes ?? "",
+                              leadTime:
+                                s.default_lead_time_days != null
+                                  ? String(s.default_lead_time_days)
+                                  : "",
                             })
                           }
                         >
@@ -247,6 +265,17 @@ export default function SuppliersPage() {
               />
             </Field>
           </div>
+          <Field
+            label="Délai d'approvisionnement (jours)"
+            hint="Alimente le rapport prédictif (quantité à commander) et le délai prévu des commandes."
+          >
+            <Input
+              inputMode="numeric"
+              value={form.leadTime}
+              placeholder="3"
+              onChange={(e) => setForm({ ...form, leadTime: e.target.value })}
+            />
+          </Field>
           <Field label="Adresse">
             <Input
               value={form.address}

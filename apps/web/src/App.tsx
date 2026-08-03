@@ -27,6 +27,9 @@ import CategoriesPage from "./pages/admin/CategoriesPage";
 import UnitsPage from "./pages/admin/UnitsPage";
 import DepotsPage from "./pages/admin/DepotsPage";
 import SuppliersPage from "./pages/admin/SuppliersPage";
+import CustomersPage from "./pages/admin/CustomersPage";
+import QuotesPage from "./pages/admin/QuotesPage";
+import PurchaseOrdersPage from "./pages/admin/PurchaseOrdersPage";
 import ReceiptsPage from "./pages/admin/ReceiptsPage";
 import InventoryPage from "./pages/admin/InventoryPage";
 import MovementsPage from "./pages/admin/MovementsPage";
@@ -45,6 +48,10 @@ import PaymentsPage from "./pages/vendor/PaymentsPage";
 import StockPage from "./pages/vendor/StockPage";
 import ZReportPage from "./pages/vendor/ZReportPage";
 import SyncQueuePage from "./pages/vendor/SyncQueuePage";
+import CashSessionPage from "./pages/vendor/CashSessionPage";
+import CashSessionsPage from "./pages/admin/CashSessionsPage";
+import InvoicesPage from "./pages/admin/InvoicesPage";
+import PromotionsPage from "./pages/admin/PromotionsPage";
 
 // Console éditeur
 import SaDashboardPage from "./pages/sa/SaDashboardPage";
@@ -194,11 +201,17 @@ export default function App() {
         {route("/admin/unites", <UnitsPage />)}
         {route("/admin/depots", <DepotsPage />)}
         {route("/admin/fournisseurs", <SuppliersPage />)}
+        {route("/admin/clients", <CustomersPage />)}
+        {route("/admin/devis", <QuotesPage />)}
+        {route("/admin/commandes", <PurchaseOrdersPage />)}
         {route("/admin/receptions", <ReceiptsPage />)}
         {route("/admin/inventaire", <InventoryPage />)}
         {route("/admin/mouvements", <MovementsPage />)}
         {route("/admin/ventes", <SalesPage />)}
         {route("/admin/ventes/:id", <SaleDetailPage />)}
+        {route("/admin/sessions-caisse", <CashSessionsPage />)}
+        {route("/admin/factures", <InvoicesPage />)}
+        {route("/admin/promotions", <PromotionsPage />)}
         {route("/admin/equipe", <VendorsPage />)}
         {route("/admin/rapports", <ReportsPage />)}
         {route("/admin/notifications", <NotificationsPage />)}
@@ -219,6 +232,7 @@ export default function App() {
         }
       >
         {route("/caisse", <PosPage />)}
+        {route("/caisse/session", <CashSessionPage />)}
         {route("/caisse/mes-ventes", <PaymentsPage />)}
         {route("/caisse/stock", <StockPage />)}
         {route("/caisse/cloture", <ZReportPage />)}

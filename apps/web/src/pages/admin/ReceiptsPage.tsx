@@ -60,6 +60,17 @@ export default function ReceiptsPage() {
   const [productQuery, setProductQuery] = useState("");
   const [productResults, setProductResults] = useState<ProductListItem[]>([]);
   const [busy, setBusy] = useState(false);
+  // Import CSV du stock initial (prise d'inventaire d'ouverture — E8).
+  const [impOpen, setImpOpen] = useState(false);
+  const [impDepotId, setImpDepotId] = useState("");
+  const [impReference, setImpReference] = useState("");
+  const [impCsv, setImpCsv] = useState("");
+  const [impBusy, setImpBusy] = useState(false);
+  const [impResult, setImpResult] = useState<{
+    receiptId: string | null;
+    imported: number;
+    errors: Array<{ ligne: number; message: string }>;
+  } | null>(null);
   const [detail, setDetail] = useState<
     | (ReceiptRow & {
         items: Array<{
@@ -174,6 +185,56 @@ export default function ReceiptsPage() {
     }
   };
 
+  const openImport = () => {
+    setImpDepotId((depots.data ?? []).find((d) => d.is_active)?.id ?? "");
+    setImpReference("");
+    setImpCsv("");
+    setImpResult(null);
+    setImpOpen(true);
+  };
+
+  const readImportFile = async (file: File | undefined) => {
+    if (!file) return;
+    try {
+      setImpCsv(await file.text());
+      setImpResult(null);
+    } catch {
+      show("Lecture du fichier impossible.", "error");
+    }
+  };
+
+  const submitImport = async () => {
+    if (!impCsv.trim()) {
+      show("Collez le contenu CSV ou choisissez un fichier.", "error");
+      return;
+    }
+    setImpBusy(true);
+    try {
+      const res = await post<{
+        receiptId: string | null;
+        imported: number;
+        errors: Array<{ ligne: number; message: string }>;
+      }>("/stock/import", {
+        depotId: impDepotId || undefined,
+        reference: impReference || null,
+        csv: impCsv,
+      });
+      setImpResult(res);
+      invalidateQueries("receipts:");
+      invalidateQueries("products:");
+      show(
+        res.errors.length === 0
+          ? `${res.imported} ligne(s) importée(s) — réception groupée créée.`
+          : `${res.imported} importée(s), ${res.errors.length} rejetée(s) : voir le détail.`,
+        res.errors.length === 0 ? "success" : "info",
+      );
+    } catch (e) {
+      show(e instanceof Error ? e.message : "Import impossible", "error");
+    } finally {
+      setImpBusy(false);
+    }
+  };
+
   const setLine = (i: number, k: keyof LineForm, v: string) =>
     setLines(lines.map((l, j) => (j === i ? { ...l, [k]: v } : l)));
 
@@ -183,14 +244,19 @@ export default function ReceiptsPage() {
         title="Réceptions fournisseurs"
         sub="Entrées de stock avec lots et dates de péremption"
         actions={
-          <Button
-            onClick={() => {
-              reset();
-              setOpen(true);
-            }}
-          >
-            📥 Nouvelle réception
-          </Button>
+          <>
+            <Button variant="outline" onClick={openImport}>
+              📋 Import stock initial (CSV)
+            </Button>
+            <Button
+              onClick={() => {
+                reset();
+                setOpen(true);
+              }}
+            >
+              📥 Nouvelle réception
+            </Button>
+          </>
         }
       />
 
@@ -456,6 +522,150 @@ export default function ReceiptsPage() {
             💡 Le coût d’achat saisi met à jour le coût catalogue (calcul des
             marges). Un lot est créé/mis à jour dès qu’un N° de lot ou une
             péremption est renseigné.
+          </p>
+        </Modal>
+      ) : null}
+
+      {impOpen ? (
+        <Modal
+          title="📋 Import du stock initial (CSV)"
+          onClose={() => !impBusy && setImpOpen(false)}
+          wide
+          footer={
+            <>
+              <Button
+                variant="outline"
+                onClick={() => setImpOpen(false)}
+                disabled={impBusy}
+              >
+                Fermer
+              </Button>
+              <Button
+                loading={impBusy}
+                onClick={submitImport}
+                disabled={!impCsv.trim() || impResult?.imported != null}
+              >
+                Lancer l'import
+              </Button>
+            </>
+          }
+        >
+          <div className="row" style={{ flexWrap: "wrap" }}>
+            <Field label="Dépôt de réception" required>
+              <Select
+                value={impDepotId}
+                onChange={(e) => setImpDepotId(e.target.value)}
+              >
+                {(depots.data ?? [])
+                  .filter((d) => d.is_active)
+                  .map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.name}
+                    </option>
+                  ))}
+              </Select>
+            </Field>
+            <Field label="Référence (inventaire d'ouverture)">
+              <Input
+                value={impReference}
+                onChange={(e) => setImpReference(e.target.value)}
+                placeholder="Ex. : Inventaire 01/08/2026"
+              />
+            </Field>
+            <Field label="Fichier CSV">
+              <Input
+                type="file"
+                accept=".csv,text/csv"
+                onChange={(e) => void readImportFile(e.target.files?.[0])}
+              />
+            </Field>
+          </div>
+          <Field
+            label="Contenu CSV"
+            hint="Colonnes attendues : Produit (code-barres ou nom) ; Quantité ; Coût (optionnel) ; Lot (obligatoire si produit géré par lots) ; Expiration (AAAA-MM-JJ, optionnelle). Séparateur « ; » ou « , », ≤ 500 lignes."
+            required
+          >
+            <textarea
+              className="input"
+              rows={8}
+              style={{ fontFamily: "monospace", width: "100%" }}
+              value={impCsv}
+              onChange={(e) => {
+                setImpCsv(e.target.value);
+                setImpResult(null);
+              }}
+              placeholder={
+                "Produit;Quantité;Coût;Lot;Expiration\n6100000000011;48;200;LOT-A;2027-06-30"
+              }
+            />
+          </Field>
+          {impResult ? (
+            <div
+              style={{
+                border: "1px solid var(--line, #e2e8f0)",
+                borderRadius: 8,
+                padding: 12,
+                marginTop: 10,
+              }}
+            >
+              <p style={{ marginTop: 0 }}>
+                <strong>{impResult.imported}</strong> ligne(s) importée(s)
+                {impResult.receiptId ? (
+                  <>
+                    {" "}
+                    — réception groupée créée (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setImpOpen(false);
+                        void openDetail(impResult.receiptId!);
+                      }}
+                    >
+                      voir le détail
+                    </Button>
+                    ).
+                  </>
+                ) : (
+                  "."
+                )}
+              </p>
+              {impResult.errors.length > 0 ? (
+                <>
+                  <p style={{ fontWeight: 700 }}>
+                    {impResult.errors.length} ligne(s) rejetée(s) :
+                  </p>
+                  <div className="table-wrap" style={{ maxHeight: 220 }}>
+                    <table>
+                      <thead>
+                        <tr>
+                          <th className="num">Ligne</th>
+                          <th>Motif du rejet</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {impResult.errors.map((er, i) => (
+                          <tr key={i}>
+                            <td className="num">{er.ligne}</td>
+                            <td>{er.message}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <p className="muted" style={{ fontSize: "0.85rem" }}>
+                    Corrigez puis relancez : seules les lignes valides seront
+                    importées.
+                  </p>
+                </>
+              ) : null}
+            </div>
+          ) : null}
+          <p className="muted" style={{ fontSize: "0.85rem", marginBottom: 0 }}>
+            💡 L'import crée une réception groupée traçée (mouvements, lots,
+            coût moyen pondéré). Les produits <strong>sérialisés</strong> (IMEI)
+            ne sont pas importables : saisissez une réception avec numéros de
+            série.
           </p>
         </Modal>
       ) : null}

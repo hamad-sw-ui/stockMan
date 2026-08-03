@@ -157,7 +157,7 @@ export function Badge({
   children,
   dot,
 }: {
-  tone?: "ok" | "warn" | "danger" | "info";
+  tone?: "ok" | "warn" | "danger" | "info" | "muted";
   children: ReactNode;
   dot?: boolean;
 }) {

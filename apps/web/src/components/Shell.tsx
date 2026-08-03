@@ -244,6 +244,16 @@ function adminNav(outbox: number): NavGroup[] {
           ico: "🧾",
           badge: outbox,
         },
+        {
+          to: "/admin/sessions-caisse",
+          label: "Sessions de caisse",
+          ico: "💵",
+        },
+        { to: "/admin/factures", label: "Factures & avoirs", ico: "🧾" },
+        { to: "/admin/promotions", label: "Promotions", ico: "🎁" },
+        { to: "/admin/clients", label: "Clients & crédit", ico: "🤝" },
+        { to: "/admin/devis", label: "Devis & proforma", ico: "📝" },
+        { to: "/admin/commandes", label: "Achats fournisseurs", ico: "📋" },
       ],
     },
     {
@@ -289,6 +299,7 @@ function vendorNav(outbox: number): NavGroup[] {
     {
       items: [
         { to: "/caisse", label: "Caisse", ico: "🧾", end: true },
+        { to: "/caisse/session", label: "Ma caisse", ico: "💵" },
         { to: "/caisse/mes-ventes", label: "Mes ventes", ico: "💳" },
         { to: "/caisse/stock", label: "Stock du dépôt", ico: "📦" },
         { to: "/caisse/cloture", label: "Clôture (Z)", ico: "🧮" },

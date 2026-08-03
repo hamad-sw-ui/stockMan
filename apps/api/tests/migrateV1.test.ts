@@ -511,7 +511,18 @@ describe("migrateur V1 → V2", () => {
     const mig = await q.query(
       "SELECT version FROM schema_migrations ORDER BY version",
     );
-    expect(mig.rows.map((r) => r.version)).toEqual(["V001", "V002", "V003"]);
+    expect(mig.rows.map((r) => r.version)).toEqual([
+      "V001",
+      "V002",
+      "V003",
+      "V004",
+      "V005",
+      "V006",
+      "V007",
+      "V008",
+      "V009",
+      "V010",
+    ]);
     for (const t of [
       "stock_levels",
       "stock_receipts",

@@ -386,14 +386,19 @@ router.get(
     const search =
       typeof req.query.search === "string" ? req.query.search.trim() : "";
     const r = await query(
-      `SELECT p.id, p.name, p.barcode, p.selling_price, p.min_stock_level,
-              un.symbol AS unit_symbol, COALESCE(SUM(sl.quantity),0)::float AS quantity
+      `SELECT p.id, p.name, p.barcode, p.selling_price,
+              COALESCE(pds.min_stock_level, p.min_stock_level)::float AS min_stock_level,
+              pds.bin_location,
+              un.symbol AS unit_symbol,
+              COALESCE(SUM(sl.quantity),0)::float AS quantity,
+              COALESCE(SUM(sl.reserved_qty),0)::float AS reserved_qty
          FROM products p
          LEFT JOIN stock_levels sl ON sl.product_id=p.id AND sl.depot_id=$2
+         LEFT JOIN product_depot_settings pds ON pds.product_id=p.id AND pds.depot_id=$2
          LEFT JOIN units un ON un.id=p.unit_id
         WHERE p.tenant_id=$1 AND p.archived_at IS NULL
           AND ($3 = '' OR p.name ILIKE '%'||$3||'%' OR p.barcode = $3)
-        GROUP BY p.id, p.name, p.barcode, p.selling_price, p.min_stock_level, un.symbol
+        GROUP BY p.id, p.name, p.barcode, p.selling_price, p.min_stock_level, pds.min_stock_level, pds.bin_location, un.symbol
         ORDER BY p.name LIMIT 200`,
       [u.tenantId, req.params.id!, search],
     );
@@ -408,6 +413,8 @@ const supplierSchema = z.object({
   phone: z.string().trim().max(50).nullish(),
   address: z.string().trim().max(2000).nullish(),
   notes: z.string().trim().max(2000).nullish(),
+  // Délai d'approvisionnement habituel (jours) — alimente prédictif & OTIF (E4)
+  defaultLeadTimeDays: z.coerce.number().int().min(0).max(365).optional(),
 });
 
 router.get(
@@ -458,7 +465,7 @@ router.post(
     const u = (req as AuthRequest).user;
     const b = req.body;
     const r = await query(
-      "INSERT INTO suppliers (tenant_id, name, email, phone, address, notes) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *",
+      "INSERT INTO suppliers (tenant_id, name, email, phone, address, notes, default_lead_time_days) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *",
       [
         u.tenantId,
         b.name,
@@ -466,6 +473,7 @@ router.post(
         b.phone ?? null,
         b.address ?? null,
         b.notes ?? null,
+        b.defaultLeadTimeDays ?? 3,
       ],
     );
     await writeAudit({
@@ -496,7 +504,8 @@ router.patch(
     const b = req.body;
     const r = await query(
       `UPDATE suppliers SET name=COALESCE($3,name), email=COALESCE($4,email), phone=COALESCE($5,phone),
-              address=COALESCE($6,address), notes=COALESCE($7,notes), updated_at=now()
+              address=COALESCE($6,address), notes=COALESCE($7,notes),
+              default_lead_time_days=COALESCE($8,default_lead_time_days), updated_at=now()
         WHERE id=$1 AND tenant_id=$2 RETURNING *`,
       [
         req.params.id!,
@@ -506,6 +515,7 @@ router.patch(
         b.phone ?? null,
         b.address ?? null,
         b.notes ?? null,
+        b.defaultLeadTimeDays ?? null,
       ],
     );
     res.json(r.rows[0]);

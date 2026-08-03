@@ -2,6 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { query } from "../config/db";
 import { h } from "../lib/asyncHandler";
+import { HttpError } from "../lib/errors";
 
 import {
   authenticate,
@@ -83,12 +84,17 @@ router.put(
 );
 
 // ============================ CONFIG TENANT (ADMIN) =========================
-const TENANT_KEYS = [
+// Clés SECRÈTES (identifiants SMS/WhatsApp) : masquées en lecture.
+const TENANT_SECRET_KEYS = [
   "sms_username",
   "sms_api_key",
   "whatsapp_token",
   "whatsapp_phone_id",
 ] as const;
+// Préférences métier lisibles en clair (interrupteurs de fonctionnalités).
+// cash_session_required (E6) : « true » interdit de vendre/encaisser hors
+// session de caisse ouverte.
+const TENANT_PREF_KEYS = ["cash_session_required"] as const;
 
 router.get(
   "/tenant",
@@ -99,10 +105,11 @@ router.get(
       [(req as AuthRequest).user.tenantId],
     );
     res.json(
-      r.rows.map((row) => ({
-        ...row,
-        value: mask({ ...row, is_secret: true }),
-      })),
+      r.rows.map((row) =>
+        row.is_secret
+          ? { ...row, value: mask({ ...row, is_secret: true }), masked: true }
+          : { ...row, masked: false },
+      ),
     );
   }),
 );
@@ -113,19 +120,30 @@ router.put(
   requireActiveLicense(),
   validateBody(
     z.object({
-      key: z.enum(TENANT_KEYS),
+      key: z.enum([...TENANT_SECRET_KEYS, ...TENANT_PREF_KEYS]),
       value: z.string().min(1, "Valeur requise").max(4000),
     }),
   ),
   h(async (req, res) => {
-    const b = req.body;
+    const b = req.body as { key: string; value: string };
     const t = (req as AuthRequest).user.tenantId;
+    const isPref = (TENANT_PREF_KEYS as readonly string[]).includes(b.key);
+    if (isPref && !["true", "false"].includes(b.value)) {
+      throw HttpError.badRequest(
+        "CONFIG_VALUE_INVALID",
+        `La préférence « ${b.key} » attend « true » ou « false ».`,
+      );
+    }
     await query(
-      `INSERT INTO tenant_configs (tenant_id, key, value, is_secret) VALUES ($1,$2,$3,true)
-       ON CONFLICT (tenant_id, key) DO UPDATE SET value=$3`,
-      [t, b.key, b.value],
+      `INSERT INTO tenant_configs (tenant_id, key, value, is_secret) VALUES ($1,$2,$3,$4)
+       ON CONFLICT (tenant_id, key) DO UPDATE SET value=$3, is_secret=$4`,
+      [t, b.key, b.value, !isPref],
     );
-    res.json({ message: "Clé enregistrée (masquée en lecture)." });
+    res.json({
+      message: isPref
+        ? "Préférence enregistrée."
+        : "Clé enregistrée (masquée en lecture).",
+    });
   }),
 );
 

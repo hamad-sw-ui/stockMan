@@ -278,6 +278,10 @@ textarea.input:focus {
   background: var(--info-soft);
   color: var(--info);
 }
+.badge-muted {
+  background: var(--surface-2);
+  color: var(--ink-3, var(--ink-2));
+}
 .badge-dot::before {
   content: "";
   width: 7px;

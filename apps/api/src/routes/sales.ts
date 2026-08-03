@@ -29,6 +29,13 @@ const createSaleSchema = z.object({
         unitId: z.string().uuid().nullish(),
         quantity: qty,
         discountPct: z.coerce.number().min(0).max(100).default(0),
+        // E8 — produit sérialisé (IMEI) : numéros exacts vendus.
+        serialNumbers: z
+          .array(z.string().trim().min(1).max(100))
+          .max(500)
+          .nullish(),
+        // NB : priceOverride (prix figé de devis) volontairement ABSENT du
+        // schéma client — la conversion de devis l'injecte côté serveur.
       }),
     )
     .min(1, "Le panier est vide")
@@ -38,6 +45,20 @@ const createSaleSchema = z.object({
   clientSaleId: z.string().uuid().nullish(),
   createdAt: z.string().datetime({ offset: true }).nullish(),
   amountReceived: z.coerce.number().min(0).optional(),
+  // E3 — client, crédit, paiement mixte
+  customerId: z.string().uuid().nullish(),
+  dueDate: z.string().date().nullish(),
+  payments: z
+    .array(
+      z.object({
+        method: z.enum(["CASH", "MTN_MOMO", "ORANGE_MONEY"]),
+        amount: z.coerce.number().positive().finite(),
+        reference: z.string().trim().max(100).nullish(),
+        clientPaymentId: z.string().uuid().nullish(),
+      }),
+    )
+    .max(10)
+    .optional(),
 });
 
 router.post(
@@ -49,12 +70,36 @@ router.post(
     const b = req.body;
     const result = await saleService.createSale(u, {
       depotId: b.depotId,
-      items: b.items,
+      items: b.items.map(
+        (it: {
+          productId: string;
+          variantId?: string | null;
+          unitId?: string | null;
+          quantity: number;
+          discountPct?: number;
+          serialNumbers?: string[] | null;
+        }) => ({ ...it, serialNumbers: it.serialNumbers ?? undefined }),
+      ),
       paymentMethod: b.paymentMethod,
       paymentReference: b.paymentReference ?? undefined,
       clientSaleId: b.clientSaleId ?? undefined,
       createdAt: b.createdAt ?? undefined,
       amountReceived: b.amountReceived,
+      customerId: b.customerId ?? undefined,
+      dueDate: b.dueDate ?? undefined,
+      payments: b.payments?.map(
+        (p: {
+          method: "CASH" | "MTN_MOMO" | "ORANGE_MONEY";
+          amount: number;
+          reference?: string | null;
+          clientPaymentId?: string | null;
+        }) => ({
+          method: p.method,
+          amount: p.amount,
+          reference: p.reference ?? undefined,
+          clientPaymentId: p.clientPaymentId ?? undefined,
+        }),
+      ),
     });
     res.status(result.deduplicated ? 200 : 201).json(result);
   }),
@@ -67,6 +112,8 @@ const listSchema = pageQuerySchema.extend({
   depotId: z.string().uuid().optional(),
   vendorId: z.string().uuid().optional(),
   paymentMethod: z.enum(["CASH", "MTN_MOMO", "ORANGE_MONEY"]).optional(),
+  paymentStatus: z.enum(["PAID", "PARTIAL", "CREDIT"]).optional(),
+  customerId: z.string().uuid().optional(),
   status: z.enum(["COMPLETED", "VOIDED"]).optional(),
   mine: z.coerce.boolean().optional(),
 });
@@ -93,12 +140,17 @@ router.get(
     if (vendorId) conds.push(`s.vendor_id = $${params.push(vendorId)}`);
     if (q.paymentMethod)
       conds.push(`s.payment_method = $${params.push(q.paymentMethod)}`);
+    if (q.paymentStatus)
+      conds.push(`s.payment_status = $${params.push(q.paymentStatus)}`);
+    if (q.customerId)
+      conds.push(`s.customer_id = $${params.push(q.customerId)}`);
     if (q.status) conds.push(`s.status = $${params.push(q.status)}`);
     // Compteurs via sous-requêtes agrégées non corrélées AVANT le WHERE (pas de fanout : 1 ligne/sale)
     const fromClause = `
       FROM sales s
       JOIN users vu ON vu.id = s.vendor_id
       JOIN depots d ON d.id = s.depot_id
+      LEFT JOIN customers cu ON cu.id = s.customer_id
       LEFT JOIN (SELECT sale_id, COUNT(*)::int AS c FROM sale_items GROUP BY sale_id) lc ON lc.sale_id = s.id
       LEFT JOIN (SELECT sr2.sale_id, SUM(sri.base_qty * sri.unit_price)::float AS amt
                    FROM sale_returns sr2 JOIN sale_return_items sri ON sri.return_id = sr2.id
@@ -109,7 +161,8 @@ router.get(
     );
     const rows = await query(
       `SELECT s.id, s.status, s.total_amount, s.payment_method, s.payment_reference, s.created_at, s.synced_at,
-              s.client_sale_id, vu.name AS vendor_name, d.name AS depot_name,
+              s.client_sale_id, s.payment_status, s.amount_paid, s.customer_id,
+              cu.name AS customer_name, vu.name AS vendor_name, d.name AS depot_name,
               COALESCE(lc.c, 0)::int AS line_count, COALESCE(ra.amt, 0)::float AS returned_amount
        ${fromClause} WHERE ${conds.join(" AND ")}
        ORDER BY s.created_at DESC LIMIT ${limit} OFFSET ${offset}`,
@@ -214,6 +267,32 @@ router.post(
     const u = (req as AuthRequest).user;
     const sale = await saleService.voidSale(u, req.params.id!, req.body.reason);
     res.json({ message: "Vente annulée, stock restitué.", sale });
+  }),
+);
+
+// ============================ VERSEMENTS (règlement crédit, E3) =============
+router.post(
+  "/:id/payments",
+  requireActiveLicense(),
+  validateParams(uuidParam),
+  validateBody(
+    z.object({
+      method: z.enum(["CASH", "MTN_MOMO", "ORANGE_MONEY"]),
+      amount: z.coerce.number().positive("Montant invalide").finite(),
+      reference: z.string().trim().max(100).nullish(),
+      clientPaymentId: z.string().uuid().nullish(),
+    }),
+  ),
+  h(async (req, res) => {
+    const u = (req as AuthRequest).user;
+    const b = req.body;
+    const result = await saleService.addPayment(u, req.params.id!, {
+      method: b.method,
+      amount: b.amount,
+      reference: b.reference ?? undefined,
+      clientPaymentId: b.clientPaymentId ?? undefined,
+    });
+    res.status(result.deduplicated ? 200 : 201).json(result);
   }),
 );
 

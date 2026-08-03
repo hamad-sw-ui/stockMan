@@ -1,8 +1,11 @@
-# 04 — Référence API StockMan (v2.0)
+# 04 — Référence API StockMan (v2.1 « conformité expert »)
 
 API REST JSON du SaaS StockMan. Ce document est le guide d'intégration ; la
 spécification machine complète (OpenAPI 3.0.3, exhaustive à 100 % — vérifiée
-par test) est servie par l'API elle-même :
+par test) est servie par l'API elle-même. La **v2.1** ajoute les domaines de
+l'audit expert métier (E1→E8) : clients/crédit, devis, commandes fournisseurs,
+campagnes d'inventaire, sessions de caisse, factures/TVA, promotions, séries
+IMEI, exports comptables.
 
 ```
 GET /api/openapi.json        → spec OpenAPI 3.0 (publique, cache 1 h)
@@ -76,20 +79,41 @@ Codes courants : `VALIDATION_ERROR` (400, `details.issues`), `INVALID_CREDENTIAL
 
 ## 5. Cartographie des ressources
 
-| Domaine                                            | Préfixe                                       | Écrit                                    |
-| -------------------------------------------------- | --------------------------------------------- | ---------------------------------------- |
-| Authentification                                   | `/api/auth/*`                                 | public + session                         |
-| Catégories · unités · dépôts · fournisseurs        | `/api/categories                              | units                                    | depots  | suppliers`         | ADMIN (+ licence) |
-| Produits · variantes · lots · import/export CSV    | `/api/products*`                              | ADMIN                                    |
-| Réceptions · transferts · ajustements · mouvements | `/api/stock/*`                                | ADMIN (lecture mouvements), écrit ADMIN  |
-| Ventes · annulation · retours · reçus              | `/api/sales*`                                 | vente : tout rôle ; void/retours : ADMIN |
-| Caisse                                             | `/api/pos/bootstrap`                          | tout rôle                                |
-| Rapports · Z · prédictif                           | `/api/reports/*`                              | dashboard/Z : tout rôle ; autres : ADMIN |
-| Équipe                                             | `/api/users*`                                 | ADMIN                                    |
-| Tenant courant · abonnement                        | `/api/tenants/current`, `/api/licenses/plans` | lecture AUTH, écrit ADMIN                |
-| Console éditeur                                    | `/api/tenants                                 | licenses                                 | configs | reports/superadmin | */supervision`    | SUPER_ADMIN |
-| Notifications · paramètres d'alertes               | `/api/notifications*`                         | lecture AUTH, réglages ADMIN             |
-| Audit                                              | `/api/audit-logs*`                            | lecture ADMIN / supervision SA           |
+| Domaine                                            | Préfixe                                       | Écrit                                                 |
+| -------------------------------------------------- | --------------------------------------------- | ----------------------------------------------------- |
+| Authentification                                   | `/api/auth/*`                                 | public + session                                      |
+| Catégories · unités · dépôts · fournisseurs        | `/api/categories                              | units                                                 | depots  | suppliers`         | ADMIN (+ licence) |
+| Produits · variantes · lots · import/export CSV    | `/api/products*`                              | ADMIN                                                 |
+| Réceptions · transferts · ajustements · mouvements | `/api/stock/*`                                | ADMIN (lecture mouvements), écrit ADMIN               |
+| Ventes · annulation · retours · reçus              | `/api/sales*`                                 | vente : tout rôle ; void/retours : ADMIN              |
+| Caisse                                             | `/api/pos/bootstrap`                          | tout rôle                                             |
+| Rapports · Z · prédictif                           | `/api/reports/*`                              | dashboard/Z : tout rôle ; autres : ADMIN              |
+| Équipe                                             | `/api/users*`                                 | ADMIN                                                 |
+| Tenant courant · abonnement                        | `/api/tenants/current`, `/api/licenses/plans` | lecture AUTH, écrit ADMIN                             |
+| Console éditeur                                    | `/api/tenants                                 | licenses                                              | configs | reports/superadmin | */supervision`    | SUPER_ADMIN |
+| Notifications · paramètres d'alertes               | `/api/notifications*`                         | lecture AUTH, réglages ADMIN                          |
+| Audit                                              | `/api/audit-logs*`                            | lecture ADMIN / supervision SA                        |
+| Clients · crédit · relances                        | `/api/customers*`                             | ADMIN (sélection caisse : tout rôle)                  |
+| Devis / proforma                                   | `/api/quotes*`                                | ADMIN                                                 |
+| Commandes fournisseurs · retours · OTIF            | `/api/purchase-orders*`                       | ADMIN                                                 |
+| Campagnes d'inventaire                             | `/api/inventory-campaigns*`                   | ADMIN                                                 |
+| Sessions de caisse                                 | `/api/cash-sessions*`                         | ouverture/clôture : caissier du dépôt ; suivi : ADMIN |
+| Factures & avoirs (TVA)                            | `/api/invoices*`                              | lecture ADMIN                                         |
+| Promotions · historique des prix                   | `/api/pricing/*`                              | ADMIN                                                 |
+| Numéros de série (IMEI)                            | `/api/serials*`                               | lecture tout rôle ; enregistrement ADMIN              |
+
+### Domaines v2.1 « conformité expert » (E1→E8)
+
+| Module                     | Endpoints clés                                                                                                                                                                                                                                                                                               | Invariants garantis serveur                                                                                                                                                                                                                                                        |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **E1 Coûts réels**         | `GET /api/reports/cogs` · `GET /api/reports/margin                                                                                                                                                                                                                                                           | stock-valuation` (CUMP)                                                                                                                                                                                                                                                            | `sale_items.unit_cost` figé à la vente ; CUMP recalculé à chaque entrée ; annulation réintègre au même coût ; changer `purchase_price` ne modifie plus l'historique |
+| **E2 Lots / FEFO**         | `GET /api/reports/batch-trace` · `GET /api/stock/transit`                                                                                                                                                                                                                                                    | allocation FEFO automatique à la vente (choix manuel avec motif) ; vente d'un lot périmé **bloquée serveur** ; rappel : lot → ventes                                                                                                                                               |
+| **E3 Clients & crédit**    | `GET/POST /api/customers` · `GET/PATCH /api/customers/{id}` · `POST /api/customers/{id}/remind` · `POST /api/sales/{id}/payments` · `GET/POST /api/quotes` · `POST /api/quotes/{id}/convert`                                                                                                                 | statut PAYÉ/PARTIEL/CRÉDIT ; versements idempotents (`clientPaymentId`) ; vieillissement 30/60/90 ; plafond de crédit bloquant ; devis à prix figés convertibles                                                                                                                   |
+| **E4 Approvisionnement**   | `GET/POST /api/purchase-orders` · `POST /{id}/send                                                                                                                                                                                                                                                           | receive                                                                                                                                                                                                                                                                            | close                                                                                                                                                               | cancel`·`GET/POST /api/purchase-orders/returns`·`GET /api/purchase-orders/otif`                                                                                              | réceptions partielles + reliquats ; motifs d'écart ; retours valorisés au coût réel du lot ; bidirectionnel avec `stock_receipts` |
+| **E5 Inventaire physique** | `GET/POST /api/inventory-campaigns` · `POST /{id}/start                                                                                                                                                                                                                                                      | cancel`·`PUT /{id}/counts`·`POST /{id}/review                                                                                                                                                                                                                                      | validate`·`GET /abc-schedule`                                                                                                                                       | comptage aveugle ; qui compte ≠ qui valide (403) ; écarts valorisés au CUMP ; gel optionnel du périmètre ; motifs codifiés                                                   |
+| **E6 Sessions de caisse**  | `GET/POST /api/cash-sessions` · `GET /current` · `POST /{id}/close`                                                                                                                                                                                                                                          | fond d'ouverture, attendu par méthode, compté, écart ; vente interdite hors session si `cash_session_required=true` ; Z émis à la clôture, journée verrouillée                                                                                                                     |
+| **E7 Fiscalité CM**        | `GET /api/invoices` (+`/by-sale/{saleId}`) · `GET /api/reports/vat-journal` · `GET /api/reports/exports/syscohada-sales                                                                                                                                                                                      | receivables                                                                                                                                                                                                                                                                        | inventory`                                                                                                                                                          | TVA par produit (19,25 %/exonéré) ; numérotation continue par série/année verrouillée ; facture immuable (VOID → avoir ; retour partiel → avoir partiel) ; mentions NIU/RCCM |
+| **E8 Maturité**            | `GET /api/stock/transit` · `POST /api/stock/import` · `GET/POST/PATCH/DELETE /api/pricing/promotions` · `GET /api/pricing/price-history/{productId}` · `GET/POST /api/serials/product/{productId}` · `GET /api/serials/lookup` · `GET/PUT /api/products/{id}/depot-settings` · `GET /api/reports/stock-kpis` | transit visible + réception partielle écartée ; IMEI obligatoire à la vente d'un produit sérialisé (1 numéro = 1 article) ; promo produit > globale ; plafond de remise par rôle (403 `DISCOUNT_LIMIT_EXCEEDED`) ; seuils par dépôt + rayonnages ; ABC/rotation/couverture/dormant |
 
 ### Import catalogue (CSV)
 
@@ -103,7 +127,20 @@ Eau 1.5L;Boissons;6001;200;400;Pce;5
 → `{ created, updated, total, errors: [{ ligne, message }] }` · ≤ 500 lignes ·
 upsert par code-barres sinon nom (casse indifférente) · catégories auto-créées ·
 audit `IMPORT`. Les quantités ne passent **pas** par l'import (stock tracé :
-réceptions `POST /api/stock/receipts`).
+réceptions `POST /api/stock/receipts` ou import de l'inventaire d'ouverture ci-dessous).
+
+### Import du stock initial (inventaire d'ouverture — v2.1)
+
+```
+POST /api/stock/import          { "depotId"?, "reference"?, "csv": "Produit;Quantité;Coût;Lot;Expiration\nEau 1.5L;48;200;LOT-A;2027-06-30" }
+```
+
+→ `{ receiptId, imported, errors: [{ ligne, message }] }` — une **réception
+groupée atomique** (lots créés, CUMP pondéré, mouvements `IN`, audit `IMPORT`) ;
+colonnes reconnues avec accents indifférents ; `Lot` obligatoire pour les
+produits gérés par lots ; **produits sérialisés refusés** (leur entrée exige
+les numéros de série) ; ≤ 500 lignes ; les lignes invalides sont rapportées
+sans bloquer les valides.
 
 ### États d'une licence
 

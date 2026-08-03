@@ -1,5 +1,7 @@
-/** Fiche produit : aperçu (stock par dépôt), variantes, lots (FEFO) et
- *  journal des mouvements, avec CRUD complet et archivage/restauration. */
+/** Fiche produit : aperçu (stock par dépôt), variantes, lots (FEFO),
+ *  journal des mouvements, paramètres PAR DÉPÔT (seuil effectif + rayonnage,
+ *  E8), historique des prix (E8), numéros de série en stock (E8) —
+ *  CRUD complet et archivage/restauration. */
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
@@ -14,13 +16,14 @@ import {
   Kpi,
   Modal,
   PageHeader,
+  Pagination,
   Select,
   Spinner,
   Tabs,
 } from "../../components/ui";
 import { BarcodeSvg } from "../../components/Barcode";
 import { canEncodeCode39 } from "../../lib/barcode";
-import { del, patch, post } from "../../lib/http";
+import { del, get, patch, post, put } from "../../lib/http";
 import {
   formatDate,
   formatDateTime,
@@ -33,7 +36,11 @@ import { useToast } from "../../store/toast";
 import type {
   Batch,
   Depot,
+  DepotSettingRow,
+  Paged,
+  PriceHistoryEntry,
   ProductDetail,
+  SerialRow,
   Supplier,
   Variant,
 } from "../../lib/types";
@@ -52,7 +59,7 @@ export default function ProductDetailPage() {
   const [confirmArchive, setConfirmArchive] = useState(false);
   const [busy, setBusy] = useState(false);
 
-  // Étiquettes code-barres (impression A4 locale, Code 39 sans dépendance)
+  // Étiquettes code-barres (impression A4 locale, Code 39 ou EAN-13 sans dépendance)
   const [labelsOpen, setLabelsOpen] = useState(false);
   const [labelCount, setLabelCount] = useState(24);
   const [labelVariant, setLabelVariant] = useState(""); // '' = produit, sinon id variante
@@ -76,6 +83,58 @@ export default function ProductDetailPage() {
     expiryDate: string;
     supplierId: string;
   } | null>(null);
+
+  // Traçabilité / rappel de lot (E2)
+  interface BatchTrace {
+    found: boolean;
+    batchNumber: string;
+    batches: Array<{
+      id: string;
+      depot_name: string | null;
+      quantity: number;
+      expiry_date: string | null;
+      unit_cost?: number;
+    }>;
+    inflows: Array<{
+      created_at: string;
+      reference: string | null;
+      supplier: string | null;
+      depot: string | null;
+      qty: number;
+      unit_cost: number;
+    }>;
+    outflows: Array<{
+      sale_id: string;
+      status: string;
+      created_at: string;
+      depot: string | null;
+      vendor: string | null;
+      qty: number;
+      unit_price: number;
+    }>;
+    otherMovements: Array<{
+      type: string;
+      quantity: number;
+      created_at: string;
+      depot: string | null;
+    }>;
+  }
+  const [trace, setTrace] = useState<{
+    batchNumber: string;
+    data?: BatchTrace;
+  } | null>(null);
+
+  const loadTrace = async (batchNumber: string) => {
+    setTrace({ batchNumber });
+    try {
+      const data = await get<BatchTrace>(
+        `/reports/batch-trace?productId=${id}&batchNumber=${encodeURIComponent(batchNumber)}`,
+      );
+      setTrace({ batchNumber, data });
+    } catch {
+      setTrace(null);
+    }
+  };
 
   const refresh = () => invalidateQueries(`product:${id}`);
 
@@ -309,6 +368,11 @@ export default function ProductDetailPage() {
           sub={margin > 0 ? `marge ${formatMoney(margin)}` : undefined}
         />
         <Kpi
+          label="CUMP"
+          value={formatMoney(p.avg_cost ?? p.purchase_price)}
+          sub="coût réel moyen pondéré"
+        />
+        <Kpi
           label="Stock total"
           value={`${formatQty(totalQty)} ${p.unit_symbol ?? ""}`}
         />
@@ -327,6 +391,11 @@ export default function ProductDetailPage() {
           { id: "variantes", label: `🎨 Variantes (${p.variants.length})` },
           { id: "lots", label: `📦 Lots (${p.batches.length})` },
           { id: "mouvements", label: "↔️ Mouvements" },
+          { id: "depots", label: "⚙️ Par dépôt" },
+          { id: "prix", label: "💲 Prix" },
+          ...(p.requires_serial
+            ? [{ id: "series", label: "🔢 Séries (IMEI)" }]
+            : []),
         ]}
       />
 
@@ -536,7 +605,15 @@ export default function ProductDetailPage() {
                         )}
                       </td>
                       <td className="muted">{formatDate(b.received_date)}</td>
-                      <td>
+                      <td className="row" style={{ gap: 4 }}>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          title="Traçabilité / rappel de lot"
+                          onClick={() => loadTrace(b.batch_number)}
+                        >
+                          🔎
+                        </Button>
                         <Button
                           variant="ghost"
                           size="sm"
@@ -561,6 +638,14 @@ export default function ProductDetailPage() {
             </div>
           )}
         </Card>
+      ) : null}
+
+      {tab === "depots" && id ? <DepotSettingsTab productId={id} /> : null}
+
+      {tab === "prix" && id ? <PriceHistoryTab productId={id} /> : null}
+
+      {tab === "series" && id && p.requires_serial ? (
+        <SerialsTab productId={id} />
       ) : null}
 
       {tab === "mouvements" ? (
@@ -814,6 +899,118 @@ export default function ProductDetailPage() {
         </Modal>
       ) : null}
 
+      {trace ? (
+        <Modal
+          title={`Traçabilité du lot « ${trace.batchNumber} »`}
+          onClose={() => setTrace(null)}
+          wide
+          footer={
+            <Button variant="outline" onClick={() => setTrace(null)}>
+              Fermer
+            </Button>
+          }
+        >
+          {!trace.data ? (
+            <Spinner />
+          ) : !trace.data.found ? (
+            <EmptyState emoji="📦" title="Lot introuvable" />
+          ) : (
+            <div className="grid" style={{ gap: 12 }}>
+              <div>
+                <h4 style={{ margin: "4px 0" }}>Reste par dépôt</h4>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Dépôt</th>
+                      <th className="num">Quantité</th>
+                      <th>Péremption</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {trace.data.batches.map((b) => (
+                      <tr key={b.id}>
+                        <td>{b.depot_name ?? "—"}</td>
+                        <td className="num" style={{ fontWeight: 700 }}>
+                          {formatQty(b.quantity)}
+                        </td>
+                        <td>
+                          {b.expiry_date ? formatDate(b.expiry_date) : "—"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div>
+                <h4 style={{ margin: "4px 0" }}>
+                  Entrées (réceptions fournisseur)
+                </h4>
+                {trace.data.inflows.length === 0 ? (
+                  <p className="muted">Aucune réception rattachée.</p>
+                ) : (
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Date</th>
+                        <th>Fournisseur</th>
+                        <th>Référence</th>
+                        <th className="num">Qté</th>
+                        <th className="num">Coût</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {trace.data.inflows.map((i, k) => (
+                        <tr key={k}>
+                          <td>{formatDate(i.created_at)}</td>
+                          <td>{i.supplier ?? "—"}</td>
+                          <td className="muted">{i.reference ?? "—"}</td>
+                          <td className="num">{formatQty(i.qty)}</td>
+                          <td className="num">{formatMoney(i.unit_cost)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+              <div>
+                <h4 style={{ margin: "4px 0" }}>
+                  Sorties (ventes prélevées sur ce lot) — rappel
+                </h4>
+                {trace.data.outflows.length === 0 ? (
+                  <p className="muted">Aucune vente prélevée sur ce lot.</p>
+                ) : (
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Date</th>
+                        <th>Vente</th>
+                        <th>Dépôt</th>
+                        <th>Vendeur</th>
+                        <th className="num">Qté</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {trace.data.outflows.map((o) => (
+                        <tr key={o.sale_id}>
+                          <td>{formatDateTime(o.created_at)}</td>
+                          <td className="mono">
+                            #{o.sale_id.slice(0, 8)}
+                            {o.status === "VOIDED" ? " (annulée)" : ""}
+                          </td>
+                          <td>{o.depot ?? "—"}</td>
+                          <td className="muted">{o.vendor ?? "—"}</td>
+                          <td className="num">{formatQty(o.qty)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </div>
+          )}
+        </Modal>
+      ) : null}
+
       {labelsOpen && cibleEtiquette ? (
         <Modal
           title="Étiquettes code-barres (A4)"
@@ -881,7 +1078,8 @@ export default function ProductDetailPage() {
                 style={{ textAlign: "center", fontSize: "0.85rem" }}
               >
                 Aperçu d'une étiquette — {labelCount} exemplaire(s) seront
-                imprimés en grille A4 (Code 39, lisible par toute douchette).
+                imprimés en grille A4 (EAN-13 si le code est un EAN valide, Code
+                39 sinon).
               </p>
             </>
           ) : (
@@ -907,5 +1105,290 @@ export default function ProductDetailPage() {
         </div>
       ) : null}
     </div>
+  );
+}
+
+/* ============================= E8 — Onglets métier ========================= */
+
+/** Paramètres PAR DÉPÔT : seuil d'alerte effectif par dépôt (vide = seuil
+ *  catalogue) et rayonnage physique (bin location). */
+function DepotSettingsTab({ productId }: { productId: string }) {
+  const { show } = useToast();
+  const q = useQuery<DepotSettingRow[]>(
+    `pds:${productId}`,
+    `/products/${productId}/depot-settings`,
+  );
+  const [edit, setEdit] = useState<{
+    depotId: string;
+    minStockLevel: string;
+    binLocation: string;
+  } | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const save = async () => {
+    if (!edit) return;
+    setBusy(true);
+    try {
+      await put(`/products/${productId}/depot-settings`, {
+        depotId: edit.depotId,
+        minStockLevel:
+          edit.minStockLevel.trim() === ""
+            ? null
+            : Number(edit.minStockLevel.replace(",", ".")),
+        binLocation: edit.binLocation.trim() || null,
+      });
+      show("Paramètres du dépôt enregistrés.", "success");
+      invalidateQueries(`pds:${productId}`);
+      invalidateQueries("predictive");
+      setEdit(null);
+    } catch (e) {
+      show(
+        e instanceof Error ? e.message : "Enregistrement impossible",
+        "error",
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Card title="Seuil d'alerte & rayonnage par dépôt" pad={false}>
+      {q.loading ? (
+        <div style={{ padding: 18 }}>
+          <Spinner label="Chargement…" />
+        </div>
+      ) : !q.data?.length ? (
+        <div style={{ padding: 18 }}>
+          <EmptyState emoji="🏬" title="Aucun dépôt" />
+        </div>
+      ) : (
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Dépôt</th>
+                <th>Seuil d'alerte (surcharge)</th>
+                <th>Rayonnage</th>
+                <th>Mis à jour</th>
+                <th aria-label="Actions" />
+              </tr>
+            </thead>
+            <tbody>
+              {q.data.map((r) => (
+                <tr key={r.depot_id}>
+                  <td>{r.depot_name}</td>
+                  <td>
+                    {r.min_stock_level != null ? (
+                      <strong>{formatQty(r.min_stock_level)}</strong>
+                    ) : (
+                      <span className="muted">catalogue</span>
+                    )}
+                  </td>
+                  <td className="muted">{r.bin_location ?? "—"}</td>
+                  <td className="muted">
+                    {r.updated_at ? formatDateTime(r.updated_at) : "—"}
+                  </td>
+                  <td>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() =>
+                        setEdit({
+                          depotId: r.depot_id,
+                          minStockLevel:
+                            r.min_stock_level != null
+                              ? String(r.min_stock_level)
+                              : "",
+                          binLocation: r.bin_location ?? "",
+                        })
+                      }
+                    >
+                      Modifier
+                    </Button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <div style={{ padding: "10px 14px" }} className="muted">
+        Le seuil par dépôt prime sur le seuil catalogue dans les alertes et le
+        rapport prédictif cadré sur ce dépôt.
+      </div>
+
+      {edit ? (
+        <Modal
+          title="Paramètres du dépôt"
+          onClose={() => !busy && setEdit(null)}
+          footer={
+            <>
+              <Button
+                variant="outline"
+                onClick={() => setEdit(null)}
+                disabled={busy}
+              >
+                Annuler
+              </Button>
+              <Button loading={busy} onClick={save}>
+                Enregistrer
+              </Button>
+            </>
+          }
+        >
+          <Field
+            label="Seuil d'alerte (ce dépôt)"
+            hint="Vide = hériter du seuil catalogue du produit."
+          >
+            <Input
+              inputMode="decimal"
+              placeholder="(catalogue)"
+              value={edit.minStockLevel}
+              onChange={(e) =>
+                setEdit({ ...edit, minStockLevel: e.target.value })
+              }
+            />
+          </Field>
+          <Field
+            label="Rayonnage (bin location)"
+            hint="Ex. : A-01-03 (allée A, rayon 01, niveau 03) — facilite le picking et l'inventaire."
+          >
+            <Input
+              maxLength={60}
+              value={edit.binLocation}
+              onChange={(e) =>
+                setEdit({ ...edit, binLocation: e.target.value })
+              }
+            />
+          </Field>
+        </Modal>
+      ) : null}
+    </Card>
+  );
+}
+
+/** Historique horodaté des changements de prix (détail & gros). */
+function PriceHistoryTab({ productId }: { productId: string }) {
+  const [page, setPage] = useState(1);
+  const q = useQuery<Paged<PriceHistoryEntry>>(
+    `pricehist:${productId}:${page}`,
+    `/pricing/price-history/${productId}?page=${page}&size=15`,
+  );
+  return (
+    <Card title="Historique des changements de prix" pad={false}>
+      {q.loading ? (
+        <div style={{ padding: 18 }}>
+          <Spinner label="Chargement…" />
+        </div>
+      ) : !q.data?.data.length ? (
+        <div style={{ padding: 18 }}>
+          <EmptyState emoji="💲" title="Aucun changement de prix historisé">
+            Chaque modification du prix de vente (détail) ou du prix de gros est
+            consignée avec l'auteur, la date et le motif.
+          </EmptyState>
+        </div>
+      ) : (
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Champ</th>
+                <th className="num">Ancien</th>
+                <th className="num">Nouveau</th>
+                <th>Par</th>
+                <th>Motif</th>
+              </tr>
+            </thead>
+            <tbody>
+              {q.data.data.map((h) => (
+                <tr key={h.id}>
+                  <td className="muted" style={{ whiteSpace: "nowrap" }}>
+                    {formatDateTime(h.created_at)}
+                  </td>
+                  <td>
+                    <Badge tone={h.field === "WHOLESALE" ? "info" : "muted"}>
+                      {h.field === "WHOLESALE" ? "Gros" : "Détail"}
+                    </Badge>
+                  </td>
+                  <td className="num muted">
+                    {h.old_price != null ? formatMoney(h.old_price) : "—"}
+                  </td>
+                  <td className="num">
+                    {h.new_price != null ? (
+                      <strong>{formatMoney(h.new_price)}</strong>
+                    ) : (
+                      <span className="muted">retiré</span>
+                    )}
+                  </td>
+                  <td className="muted">{h.changed_by_name ?? "—"}</td>
+                  <td className="muted">{h.reason ?? "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {q.data ? (
+        <Pagination
+          page={q.data.page}
+          totalPages={q.data.totalPages}
+          total={q.data.total}
+          onPage={setPage}
+        />
+      ) : null}
+    </Card>
+  );
+}
+
+/** Numéros de série (IMEI) EN STOCK du produit, par dépôt. */
+function SerialsTab({ productId }: { productId: string }) {
+  const q = useQuery<{ rows: SerialRow[] }>(
+    `serials:${productId}`,
+    `/serials/product/${productId}`,
+  );
+  return (
+    <Card title="Numéros de série en stock" pad={false}>
+      {q.loading ? (
+        <div style={{ padding: 18 }}>
+          <Spinner label="Chargement…" />
+        </div>
+      ) : !q.data?.rows.length ? (
+        <div style={{ padding: 18 }}>
+          <EmptyState emoji="🔢" title="Aucun numéro en stock">
+            Les numéros sont enregistrés automatiquement à la réception
+            fournisseur (obligatoire pour ce produit sérialisé).
+          </EmptyState>
+        </div>
+      ) : (
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Numéro de série</th>
+                <th>Dépôt</th>
+                <th>Statut</th>
+              </tr>
+            </thead>
+            <tbody>
+              {q.data.rows.map((s) => (
+                <tr key={s.id}>
+                  <td style={{ fontFamily: "monospace" }}>{s.serial}</td>
+                  <td className="muted">{s.depot_name}</td>
+                  <td>
+                    <Badge tone="ok">En stock</Badge>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <div style={{ padding: "10px 14px" }} className="muted">
+        Les numéros vendus ne figurent plus ici : utilisez la recherche
+        garantie/IMEI (caisse) pour retrouver la vente et la facture d'un
+        numéro.
+      </div>
+    </Card>
   );
 }

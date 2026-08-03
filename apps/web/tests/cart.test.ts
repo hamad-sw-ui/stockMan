@@ -137,3 +137,53 @@ it("paymentLabel", () => {
   expect(paymentLabel("MTN_MOMO")).toBe("MTN MoMo");
   expect(paymentLabel("ORANGE_MONEY")).toBe("Orange Money");
 });
+
+describe("produits sérialisés (IMEI — E8)", () => {
+  const phone: CartProduct = {
+    id: "p9",
+    name: "Téléphone X",
+    sellingPrice: 85000,
+    unitBaseValue: 1,
+    unitId: "u1",
+    unitSymbol: "Pce",
+    requiresSerial: true,
+  };
+
+  it("la quantité est pilotée par le nombre de numéros saisis", () => {
+    const l = makeLine({
+      product: phone,
+      quantity: 99, // ignoré : les numéros font foi
+      serialNumbers: ["IMEI-1", "IMEI-2"],
+    });
+    expect(l.quantity).toBe(2);
+    expect(l.baseQty).toBe(2);
+    expect(l.lineTotal).toBe(170000);
+    expect(l.serialNumbers).toEqual(["IMEI-1", "IMEI-2"]);
+  });
+
+  it("sans numéros saisis, la quantité retombe sur la saisie (≥ 1)", () => {
+    const l = makeLine({ product: phone, quantity: 3 });
+    expect(l.quantity).toBe(3);
+    expect(l.serialNumbers).toBeUndefined();
+  });
+
+  it("un seul article = un seul numéro", () => {
+    const l = makeLine({
+      product: phone,
+      quantity: 1,
+      serialNumbers: ["35678910456"],
+    });
+    expect(l.quantity).toBe(1);
+    expect(l.lineTotal).toBe(85000);
+  });
+
+  it("la clé de ligne ignore l'unité pour un produit sérialisé (unité de base)", () => {
+    const l = makeLine({
+      product: phone,
+      unit: null,
+      quantity: 1,
+      serialNumbers: ["A"],
+    });
+    expect(l.key).toBe(lineKey("p9", null, null));
+  });
+});

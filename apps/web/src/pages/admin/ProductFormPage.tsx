@@ -48,6 +48,12 @@ export default function ProductFormPage() {
     minStockLevel: "0",
     unitId: "",
     hasVariants: false,
+    trackBatch: false,
+    requiresSerial: false,
+    taxRate: "19.25",
+    wholesalePrice: "",
+    wholesaleMinQty: "0",
+    priceChangeReason: "",
   });
   const [variants, setVariants] = useState<VariantForm[]>([]);
   const [initial, setInitial] = useState({
@@ -68,9 +74,16 @@ export default function ProductFormPage() {
         barcode: p.barcode ?? "",
         purchasePrice: String(p.purchase_price ?? 0),
         sellingPrice: String(p.selling_price ?? 0),
+        taxRate: String(p.tax_rate ?? 19.25),
         minStockLevel: String(p.min_stock_level ?? 0),
         unitId: p.unit_id ?? "",
         hasVariants: p.has_variants,
+        trackBatch: p.track_batch ?? false,
+        requiresSerial: p.requires_serial ?? false,
+        wholesalePrice:
+          p.wholesale_price != null ? String(p.wholesale_price) : "",
+        wholesaleMinQty: String(p.wholesale_min_qty ?? 0),
+        priceChangeReason: "",
       });
     }
   }, [isEdit, existing.data]);
@@ -110,6 +123,12 @@ export default function ProductFormPage() {
     setSaving(true);
     try {
       if (isEdit) {
+        // E8 — le motif n'est versé à l'historique que si un prix a bougé.
+        const priceMoved = existing.data
+          ? num(f.sellingPrice) !== Number(existing.data.selling_price) ||
+            (f.wholesalePrice === "" ? null : num(f.wholesalePrice)) !==
+              (existing.data.wholesale_price ?? null)
+          : false;
         await patch(`/products/${id}`, {
           name: f.name.trim(),
           description: f.description || null,
@@ -118,8 +137,18 @@ export default function ProductFormPage() {
           purchasePrice: num(f.purchasePrice),
           sellingPrice: num(f.sellingPrice),
           minStockLevel: num(f.minStockLevel),
+          taxRate: num(f.taxRate),
           unitId: f.unitId || null,
           hasVariants: f.hasVariants,
+          trackBatch: f.trackBatch,
+          requiresSerial: f.requiresSerial,
+          wholesalePrice:
+            f.wholesalePrice === "" ? null : num(f.wholesalePrice),
+          wholesaleMinQty: num(f.wholesaleMinQty),
+          priceChangeReason:
+            priceMoved && f.priceChangeReason.trim()
+              ? f.priceChangeReason.trim()
+              : null,
         });
         show("Produit mis à jour.", "success");
         invalidateQueries("products:");
@@ -134,8 +163,14 @@ export default function ProductFormPage() {
           purchasePrice: num(f.purchasePrice),
           sellingPrice: num(f.sellingPrice),
           minStockLevel: num(f.minStockLevel),
+          taxRate: num(f.taxRate),
           unitId: f.unitId || null,
           hasVariants: f.hasVariants,
+          trackBatch: f.trackBatch,
+          requiresSerial: f.requiresSerial,
+          wholesalePrice:
+            f.wholesalePrice === "" ? null : num(f.wholesalePrice),
+          wholesaleMinQty: num(f.wholesaleMinQty),
           variants: f.hasVariants
             ? variants
                 .filter((v) => v.name.trim())
@@ -262,7 +297,7 @@ export default function ProductFormPage() {
               onChange={(e) => setF({ ...f, purchasePrice: e.target.value })}
             />
           </Field>
-          <Field label="Prix de vente (FCFA)" required>
+          <Field label="Prix de vente TTC (FCFA)" required>
             <Input
               inputMode="decimal"
               value={f.sellingPrice}
@@ -270,8 +305,20 @@ export default function ProductFormPage() {
             />
           </Field>
           <Field
+            label="TVA (%)"
+            hint="19,25 taux normal · 0 produit exonéré (les prix sont TTC : la facture ventile HT/TVA automatiquement)."
+          >
+            <Select
+              value={f.taxRate}
+              onChange={(e) => setF({ ...f, taxRate: e.target.value })}
+            >
+              <option value="19.25">19,25 % (taux normal)</option>
+              <option value="0">0 % (exonéré)</option>
+            </Select>
+          </Field>
+          <Field
             label="Seuil d’alerte stock"
-            hint="Alerte dès que le stock total descend sous ce seuil."
+            hint="Alerte dès que le stock total descend sous ce seuil (surchargeable par dépôt depuis la fiche produit)."
           >
             <Input
               inputMode="decimal"
@@ -279,6 +326,45 @@ export default function ProductFormPage() {
               onChange={(e) => setF({ ...f, minStockLevel: e.target.value })}
             />
           </Field>
+          <Field
+            label="Prix de gros TTC (FCFA)"
+            hint="Grande distribution / demi-gros : laisser vide pour désactiver le canal gros."
+          >
+            <Input
+              inputMode="decimal"
+              placeholder="— désactivé —"
+              value={f.wholesalePrice}
+              onChange={(e) => setF({ ...f, wholesalePrice: e.target.value })}
+            />
+          </Field>
+          <Field
+            label="Seuil prix de gros (qté, unité de base)"
+            hint="Le prix de gros s'applique aux clients « canal gros » dès cette quantité."
+          >
+            <Input
+              inputMode="decimal"
+              value={f.wholesaleMinQty}
+              onChange={(e) => setF({ ...f, wholesaleMinQty: e.target.value })}
+            />
+          </Field>
+          {isEdit &&
+          existing.data &&
+          (num(f.sellingPrice) !== Number(existing.data.selling_price) ||
+            (f.wholesalePrice === "" ? null : num(f.wholesalePrice)) !==
+              (existing.data.wholesale_price ?? null)) ? (
+            <Field
+              label="Motif du changement de prix"
+              hint="Versé à l'historique horodaté des prix (traçabilité « pourquoi »)."
+            >
+              <Input
+                placeholder="Ex. : hausse fournisseur, fin de série…"
+                value={f.priceChangeReason}
+                onChange={(e) =>
+                  setF({ ...f, priceChangeReason: e.target.value })
+                }
+              />
+            </Field>
+          ) : null}
         </div>
         {num(f.sellingPrice) > 0 && num(f.purchasePrice) > 0 ? (
           <p className="muted">
@@ -301,6 +387,25 @@ export default function ProductFormPage() {
             onChange={(e) => setF({ ...f, hasVariants: e.target.checked })}
           />
           Ce produit existe en plusieurs variantes (taille, couleur, format…)
+        </label>
+        <label className="row" style={{ gap: 8, marginTop: 8 }}>
+          <input
+            type="checkbox"
+            checked={f.trackBatch}
+            onChange={(e) => setF({ ...f, trackBatch: e.target.checked })}
+          />
+          Suivi par lot obligatoire (pharmacie, alimentaire…) — numéro de lot
+          exigé à chaque réception, vente FEFO tracée, rappel de lot possible
+        </label>
+        <label className="row" style={{ gap: 8, marginTop: 8 }}>
+          <input
+            type="checkbox"
+            checked={f.requiresSerial}
+            onChange={(e) => setF({ ...f, requiresSerial: e.target.checked })}
+          />
+          Produit sérialisé (téléphonie, électroménager…) — chaque unité est
+          identifiée par un numéro de série/IMEI unique : saisi à la réception,
+          vendu au numéro près (garantie, vol, SAV)
         </label>
         {f.hasVariants ? (
           isEdit ? (

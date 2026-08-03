@@ -20,11 +20,18 @@ router.get(
       typeof req.query.depotId === "string" ? req.query.depotId : undefined,
     );
 
-    const [products, variantsRaw, levels, units, categories, favorites] =
-      await Promise.all([
-        query(
-          `SELECT p.id, p.name, p.barcode, p.selling_price::float, p.purchase_price::float,
-                p.min_stock_level::float, p.has_variants, p.image_url,
+    const [
+      products,
+      variantsRaw,
+      levels,
+      units,
+      categories,
+      favorites,
+      customers,
+    ] = await Promise.all([
+      query(
+        `SELECT p.id, p.name, p.barcode, p.selling_price::float, p.purchase_price::float,
+                p.min_stock_level::float, p.has_variants, p.image_url, p.requires_serial,
                 un.id AS unit_id, un.symbol AS unit_symbol, un.base_value::float AS unit_base_value,
                 c.name AS category_name
            FROM products p
@@ -32,35 +39,41 @@ router.get(
            LEFT JOIN categories c ON c.id = p.category_id
           WHERE p.tenant_id = $1 AND p.archived_at IS NULL
           ORDER BY p.name`,
-          [u.tenantId],
-        ),
-        query(
-          `SELECT v.id, v.product_id, v.name, v.sku, v.barcode, v.additional_price::float AS additional_price, v.attributes
+        [u.tenantId],
+      ),
+      query(
+        `SELECT v.id, v.product_id, v.name, v.sku, v.barcode, v.additional_price::float AS additional_price, v.attributes
            FROM product_variants v JOIN products p ON p.id = v.product_id
           WHERE p.tenant_id=$1 AND p.archived_at IS NULL ORDER BY v.name`,
-          [u.tenantId],
-        ),
-        query(
-          "SELECT product_id, variant_id, quantity::float FROM stock_levels WHERE depot_id = $1",
-          [depotId],
-        ),
-        query(
-          "SELECT id, name, symbol, base_value::float, is_base FROM units WHERE tenant_id=$1",
-          [u.tenantId],
-        ),
-        query(
-          "SELECT id, name FROM categories WHERE tenant_id=$1 ORDER BY sort_order, name",
-          [u.tenantId],
-        ),
-        query(
-          `SELECT si.product_id, SUM(si.base_qty)::float AS qty
+        [u.tenantId],
+      ),
+      query(
+        "SELECT product_id, variant_id, quantity::float FROM stock_levels WHERE depot_id = $1",
+        [depotId],
+      ),
+      query(
+        "SELECT id, name, symbol, base_value::float, is_base FROM units WHERE tenant_id=$1",
+        [u.tenantId],
+      ),
+      query(
+        "SELECT id, name FROM categories WHERE tenant_id=$1 ORDER BY sort_order, name",
+        [u.tenantId],
+      ),
+      query(
+        `SELECT si.product_id, SUM(si.base_qty)::float AS qty
            FROM sale_items si JOIN sales s ON s.id = si.sale_id
           WHERE s.tenant_id=$1 AND s.depot_id=$2 AND s.status='COMPLETED'
             AND s.created_at >= now() - INTERVAL '30 days'
           GROUP BY si.product_id ORDER BY qty DESC LIMIT 12`,
-          [u.tenantId, depotId],
-        ),
-      ]);
+        [u.tenantId, depotId],
+      ),
+      // Clients sélectionnables à la caisse — carnet de dettes hors-ligne (E3)
+      query(
+        `SELECT id, name, phone, balance::float, credit_limit::float
+             FROM customers WHERE tenant_id=$1 AND is_active ORDER BY name LIMIT 500`,
+        [u.tenantId],
+      ),
+    ]);
 
     // Jointure effectuée côté application (évite json_agg, portable)
     const variantsByProduct = new Map<
@@ -98,6 +111,7 @@ router.get(
       units: units.rows,
       categories: categories.rows,
       favorites: favorites.rows.map((f) => f.product_id),
+      customers: customers.rows,
     });
   }),
 );

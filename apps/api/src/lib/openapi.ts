@@ -551,17 +551,70 @@ export const ROUTES: RouteDoc[] = [
     method: "post",
     path: "/api/stock/transfers/{id}/receive",
     tag: "Stock",
-    summary: "Réceptionner un transfert (stock entrant, statut RECEIVED).",
+    summary:
+      "Réceptionner un transfert (E8 v2) : PARTIELLE par ligne possible — {items?: [{transferItemId, receivedQty, lostQty?, discrepancyReason? (DAMAGE|LOSS)}]} ; absent = reliquat intégral. Écarts valorisés au coût des lots, statut PARTIALLY_RECEIVED tant qu'un reliquat subsiste.",
     role: "ADMIN",
     params: [{ name: "id", in: "path", type: UUID }],
+    errors: ["400 DISCREPANCY_REASON_REQUIRED", "409 TRANSFER_OVER_RECEIPT"],
   },
   {
     method: "post",
     path: "/api/stock/transfers/{id}/cancel",
     tag: "Stock",
-    summary: "Annuler un transfert PENDING (stock ré-intégré au dépôt source).",
+    summary:
+      "Annuler un transfert PENDING ou PARTIALLY_RECEIVED : seul le RELIQUAT (non reçu, non perdu) est ré-intégré au dépôt source.",
     role: "ADMIN",
     params: [{ name: "id", in: "path", type: UUID }],
+  },
+  {
+    method: "get",
+    path: "/api/stock/transit",
+    tag: "Stock",
+    summary:
+      "Stock EN TRANSIT (E8) : lignes des transferts ouverts avec reliquat en route, valeur au coût des lots alloués, total.",
+    role: "ADMIN",
+  },
+  {
+    method: "post",
+    path: "/api/stock/reserve",
+    tag: "Stock",
+    summary:
+      "Réserver du stock (E8) : quantités mises de côté, non vendables à la caisse (disponible = stock − réservé, contrôlé serveur).",
+    role: "ADMIN",
+    body: {
+      depotId: `${UUID}?`,
+      productId: UUID,
+      variantId: `${UUID}?`,
+      quantity: "number",
+      reason: "string?",
+    },
+    errors: ["409 STOCK_RESERVE_EXCEEDS"],
+    created: true,
+  },
+  {
+    method: "post",
+    path: "/api/stock/release",
+    tag: "Stock",
+    summary: "Libérer du stock réservé (retour au disponible à la vente).",
+    role: "ADMIN",
+    body: {
+      depotId: `${UUID}?`,
+      productId: UUID,
+      variantId: `${UUID}?`,
+      quantity: "number",
+      reason: "string?",
+    },
+    errors: ["409 RELEASE_EXCEEDS"],
+  },
+  {
+    method: "post",
+    path: "/api/stock/import",
+    tag: "Stock",
+    summary:
+      "Import CSV du stock initial (E8) : {csv, depotId?, reference?} — colonnes Produit (code-barres ou nom);Quantité;Coût;Lot;Expiration. Une réception groupée atomique ; lignes invalides rapportées sans bloquer les valides ; produits sérialisés refusés (réception avec numéros).",
+    role: "ADMIN",
+    errors: ["400 CSV_HEADER", "400 CSV_TOO_MANY"],
+    created: true,
   },
   {
     method: "post",
@@ -669,6 +722,611 @@ export const ROUTES: RouteDoc[] = [
     params: [{ name: "id", in: "path", type: UUID }],
     body: { reason: "string?", items: "[{ productId, variantId?, baseQty }]" },
   },
+  {
+    method: "post",
+    path: "/api/sales/{id}/payments",
+    tag: "Ventes",
+    summary:
+      "Versement sur une vente (règlement de crédit) : idempotent hors-ligne (clientPaymentId), solde client décrémenté, statut PARTIAL→PAID.",
+    role: "AUTH",
+    params: [{ name: "id", in: "path", type: UUID }],
+    body: {
+      method: "CASH | MTN_MOMO | ORANGE_MONEY",
+      amount: "number > 0",
+      reference: "string?",
+      clientPaymentId: "uuid? (idempotence offline)",
+    },
+    errors: ["409 OVERPAY_INVALID", "409 SALE_VOIDED_FOR_PAYMENT"],
+  },
+
+  // ------------------------------------------------------------- Clients (E3)
+  {
+    method: "get",
+    path: "/api/customers",
+    tag: "Clients",
+    summary:
+      "Liste des clients : recherche nom/téléphone (q), filtre débiteurs (withDebt), pagination.",
+    role: "AUTH",
+  },
+  {
+    method: "post",
+    path: "/api/customers",
+    tag: "Clients",
+    summary:
+      "Créer une fiche client (nom, téléphone, limite de crédit) — carnet de dettes.",
+    role: "AUTH",
+    body: {
+      name: "string",
+      phone: "string?",
+      creditLimit: "number (0 = aucune limite)",
+    },
+  },
+  {
+    method: "get",
+    path: "/api/customers/{id}",
+    tag: "Clients",
+    summary:
+      "Détail client : solde, vieillissement des créances (0-30/31-60/61-90/>90 j), dettes détaillées, 20 derniers versements.",
+    role: "AUTH",
+    params: [{ name: "id", in: "path", type: UUID }],
+  },
+  {
+    method: "patch",
+    path: "/api/customers/{id}",
+    tag: "Clients",
+    summary:
+      "Mettre à jour la fiche client (dont plafond de crédit, activation).",
+    role: "ADMIN",
+    params: [{ name: "id", in: "path", type: UUID }],
+  },
+  {
+    method: "post",
+    path: "/api/customers/{id}/remind",
+    tag: "Clients",
+    summary:
+      "Relance de paiement SMS/WhatsApp (message auto avec solde, 1/jour/client/canal par dedupe).",
+    role: "ADMIN",
+    params: [{ name: "id", in: "path", type: UUID }],
+    body: { channel: "SMS | WHATSAPP", message: "string? (override)" },
+    errors: ["400 REMIND_NO_PHONE"],
+  },
+
+  // ------------------------------------------------------------- Devis (E3)
+  {
+    method: "get",
+    path: "/api/quotes",
+    tag: "Devis",
+    summary:
+      "Devis / proformas : filtre statut (DRAFT/CONVERTED/CANCELLED), client.",
+    role: "AUTH",
+  },
+  {
+    method: "post",
+    path: "/api/quotes",
+    tag: "Devis",
+    summary:
+      "Créer un devis : prix recalculés serveur (autorité), AUCUN mouvement de stock.",
+    role: "ADMIN",
+    body: {
+      customerId: "uuid?",
+      validUntil: "date?",
+      items: "[{ productId, variantId?, unitId?, quantity, discountPct? }]",
+    },
+  },
+  {
+    method: "get",
+    path: "/api/quotes/{id}",
+    tag: "Devis",
+    summary: "Détail d'un devis (client, dépôt, lignes, statut).",
+    role: "AUTH",
+    params: [{ name: "id", in: "path", type: UUID }],
+  },
+  {
+    method: "post",
+    path: "/api/quotes/{id}/convert",
+    tag: "Devis",
+    summary:
+      "Convertir un devis en vente AU PRIX FIGÉ du devis (proforma honoré) — décrémente le stock, anti double-conversion.",
+    role: "ADMIN",
+    params: [{ name: "id", in: "path", type: UUID }],
+    errors: ["409 QUOTE_ALREADY_CONVERTED", "409 QUOTE_EXPIRED"],
+  },
+  {
+    method: "post",
+    path: "/api/quotes/{id}/cancel",
+    tag: "Devis",
+    summary: "Annuler un devis brouillon.",
+    role: "ADMIN",
+    params: [{ name: "id", in: "path", type: UUID }],
+  },
+
+  // ------------------------------------------- Approvisionnement (E4)
+  {
+    method: "get",
+    path: "/api/purchase-orders",
+    tag: "Approvisionnement",
+    summary:
+      "Bons de commande fournisseurs (DRAFT/SENT/PARTIALLY_RECEIVED/CLOSED/CANCELLED) avec compteurs commandé/réceptionné.",
+    role: "ADMIN",
+    params: [
+      { name: "status", in: "query" },
+      { name: "supplierId", in: "query", type: UUID },
+    ],
+  },
+  {
+    method: "post",
+    path: "/api/purchase-orders",
+    tag: "Approvisionnement",
+    summary:
+      "Créer un bon de commande (brouillon) — livraison prévue par défaut : aujourd'hui + délai habituel du fournisseur.",
+    role: "ADMIN",
+    body: {
+      supplierId: "uuid",
+      depotId: "uuid?",
+      expectedAt: "date? (défaut: création + délai fournisseur)",
+      items: "[{ productId, variantId?, quantity (base), unitCost }]",
+    },
+    created: true,
+    errors: ["400 SUPPLIER_UNKNOWN", "400 PRODUCT_UNKNOWN"],
+  },
+  {
+    method: "get",
+    path: "/api/purchase-orders/otif",
+    tag: "Approvisionnement",
+    summary:
+      "Taux de service fournisseurs : On-Time / In-Full / OTIF (%) et délai réel moyen mesuré.",
+    role: "ADMIN",
+    params: [
+      { name: "from", in: "query", type: DATE },
+      { name: "to", in: "query", type: DATE },
+      { name: "supplierId", in: "query", type: UUID },
+    ],
+  },
+  {
+    method: "get",
+    path: "/api/purchase-orders/returns",
+    tag: "Approvisionnement",
+    summary: "Retours fournisseur (avoirs) : liste paginée.",
+    role: "ADMIN",
+    params: [{ name: "supplierId", in: "query", type: UUID }],
+  },
+  {
+    method: "post",
+    path: "/api/purchase-orders/returns",
+    tag: "Approvisionnement",
+    summary:
+      "Créer un retour fournisseur : prélèvement FEFO (périmés inclus) ou lot explicite, valorisé au COÛT RÉEL DU LOT, mouvement SUPPLIER_RETURN.",
+    role: "ADMIN",
+    body: {
+      supplierId: "uuid",
+      reason:
+        "DAMAGED | EXPIRED | WRONG_PRODUCT | QUALITY | OVERDELIVERY | OTHER",
+      receiptId: "uuid? (rattachement livraison)",
+      items: "[{ productId, variantId?, quantity, unitId?, batchId? }]",
+    },
+    created: true,
+    errors: ["409 STOCK_INSUFFICIENT", "400 BATCH_UNKNOWN"],
+  },
+  {
+    method: "get",
+    path: "/api/purchase-orders/returns/{id}",
+    tag: "Approvisionnement",
+    summary: "Détail d'un retour fournisseur (lignes, lots, coûts).",
+    role: "ADMIN",
+    params: [{ name: "id", in: "path", type: UUID }],
+  },
+  {
+    method: "get",
+    path: "/api/purchase-orders/{id}",
+    tag: "Approvisionnement",
+    summary:
+      "Détail d'une commande : lignes avec reliquat (remaining_qty), valeur réceptionnée.",
+    role: "ADMIN",
+    params: [{ name: "id", in: "path", type: UUID }],
+  },
+  {
+    method: "post",
+    path: "/api/purchase-orders/{id}/send",
+    tag: "Approvisionnement",
+    summary: "Envoyer la commande au fournisseur (BROUILLON → ENVOYÉE).",
+    role: "ADMIN",
+    params: [{ name: "id", in: "path", type: UUID }],
+    errors: ["409 PO_NOT_DRAFT"],
+  },
+  {
+    method: "post",
+    path: "/api/purchase-orders/{id}/receive",
+    tag: "Approvisionnement",
+    summary:
+      "Réception rattachée (partielle possible) : avance les reliquats, crée la réception stock (CUMP/lots), motif d'écart codifié par ligne, clôture automatique si tout est livré.",
+    role: "ADMIN",
+    params: [{ name: "id", in: "path", type: UUID }],
+    body: {
+      items:
+        "[{ poItemId, quantity, unitId?, discrepancyReason?, batchNumber?, expiryDate? }]",
+    },
+    created: true,
+    errors: ["409 PO_NOT_RECEIVABLE", "409 PO_OVER_RECEIPT"],
+  },
+  {
+    method: "post",
+    path: "/api/purchase-orders/{id}/close",
+    tag: "Approvisionnement",
+    summary:
+      "Clôturer manuellement la commande (reliquat acté comme définitif, motif codifié).",
+    role: "ADMIN",
+    params: [{ name: "id", in: "path", type: UUID }],
+    body: {
+      reason:
+        "DELIVERED | SUPPLIER_SHORTAGE | CANCELLED_BY_SUPPLIER | PRICE_DISPUTE | OTHER",
+    },
+    errors: ["409 PO_NOT_CLOSABLE"],
+  },
+  {
+    method: "post",
+    path: "/api/purchase-orders/{id}/cancel",
+    tag: "Approvisionnement",
+    summary: "Annuler un brouillon de commande.",
+    role: "ADMIN",
+    params: [{ name: "id", in: "path", type: UUID }],
+    errors: ["409 PO_NOT_DRAFT"],
+  },
+
+  // ------------------------------------------- Inventaire pro (E5)
+  {
+    method: "get",
+    path: "/api/inventory-campaigns",
+    tag: "Inventaire",
+    summary:
+      "Campagnes d'inventaire physique (DRAFT/COUNTING/REVIEW/CLOSED/CANCELLED) avec compteurs de comptage.",
+    role: "ADMIN",
+    params: [
+      { name: "status", in: "query" },
+      { name: "depotId", in: "query", type: UUID },
+    ],
+  },
+  {
+    method: "post",
+    path: "/api/inventory-campaigns",
+    tag: "Inventaire",
+    summary:
+      "Créer une campagne (brouillon) : périmètre catalogue/ABC/sélection, comptage aveugle et gel des mouvements optionnels.",
+    role: "ADMIN",
+    body: {
+      depotId: "uuid?",
+      scope: "ALL | SELECTION | ABC_A | ABC_B | ABC_C",
+      productIds: "uuid[]? (scope SELECTION)",
+      blind: "boolean (défaut false)",
+      freezeStock: "boolean (défaut false) — gele tout mouvement du dépôt",
+    },
+    created: true,
+    errors: [
+      "400 SCOPE_EMPTY",
+      "409 uq_inventory_active_depot (1 active/dépôt)",
+    ],
+  },
+  {
+    method: "get",
+    path: "/api/inventory-campaigns/abc-schedule",
+    tag: "Inventaire",
+    summary:
+      "Inventaire tournant ABC : produits par classe (ventes 90 j), fréquence (A=30/B=90/C=365 j), dernier comptage, échéance et retard.",
+    role: "ADMIN",
+  },
+  {
+    method: "get",
+    path: "/api/inventory-campaigns/{id}",
+    tag: "Inventaire",
+    summary:
+      "Détail + rapport d'écarts VALORISÉ CUMP (théorique et coût figés au lancement ; masqués en comptage aveugle).",
+    role: "ADMIN",
+    params: [{ name: "id", in: "path", type: UUID }],
+  },
+  {
+    method: "post",
+    path: "/api/inventory-campaigns/{id}/start",
+    tag: "Inventaire",
+    summary:
+      "Lancer le comptage : génère les lignes produits, fige théorique + CUMP, active le gel éventuel.",
+    role: "ADMIN",
+    params: [{ name: "id", in: "path", type: UUID }],
+    errors: ["409 CAMPAIGN_NOT_DRAFT"],
+  },
+  {
+    method: "put",
+    path: "/api/inventory-campaigns/{id}/counts",
+    tag: "Inventaire",
+    summary: "Saisie des quantités comptées (motif codifié par ligne d'écart).",
+    role: "ADMIN",
+    params: [{ name: "id", in: "path", type: UUID }],
+    body: { lines: "[{ productId, countedQty, reason? }]" },
+    errors: ["409 CAMPAIGN_NOT_COUNTING", "400 PRODUCT_NOT_IN_CAMPAIGN"],
+  },
+  {
+    method: "post",
+    path: "/api/inventory-campaigns/{id}/review",
+    tag: "Inventaire",
+    summary:
+      "Passer en revue : exige comptage complet et motif codifié sur chaque écart, calcule les variances valorisées.",
+    role: "ADMIN",
+    params: [{ name: "id", in: "path", type: UUID }],
+    errors: ["409 COUNT_INCOMPLETE", "409 COUNT_REASON_MISSING"],
+  },
+  {
+    method: "post",
+    path: "/api/inventory-campaigns/{id}/validate",
+    tag: "Inventaire",
+    summary:
+      "Valider et appliquer les ajustements (atomique) — SÉPARATION DES TÂCHES : le validateur ne peut pas avoir compté.",
+    role: "ADMIN",
+    params: [{ name: "id", in: "path", type: UUID }],
+    errors: ["409 COUNT_VALIDATOR_SAME_AS_COUNTER", "409 CAMPAIGN_CLOSED"],
+  },
+  {
+    method: "post",
+    path: "/api/inventory-campaigns/{id}/cancel",
+    tag: "Inventaire",
+    summary: "Annuler une campagne (dégèle le dépôt si gelée).",
+    role: "ADMIN",
+    params: [{ name: "id", in: "path", type: UUID }],
+    errors: ["409 CAMPAIGN_CLOSED"],
+  },
+
+  // ------------------------------------------- Sessions de caisse (E6)
+  {
+    method: "post",
+    path: "/api/cash-sessions",
+    tag: "Sessions de caisse",
+    summary:
+      "Ouvrir la caisse du dépôt : fond d'ouverture, journée métier (fuseau tenant — une seule session ouverte/journée par dépôt, verrou de concurrence par index unique). Rôles : ADMIN (depotId requis) ou VENDEUR (son dépôt).",
+    role: "AUTH",
+    body: {
+      depotId: "uuid? (requis pour un ADMIN)",
+      openingFloat: "number ≥ 0 (fond de caisse, défaut 0)",
+      note: "string?",
+    },
+    created: true,
+    errors: ["409 SESSION_ALREADY_OPEN", "409 DAY_LOCKED"],
+  },
+  {
+    method: "get",
+    path: "/api/cash-sessions/current",
+    tag: "Sessions de caisse",
+    summary:
+      "Session ouverte du dépôt + attendus EN DIRECT par méthode (fond + encaissements) + drapeau « session obligatoire » du tenant (cash_session_required).",
+    role: "AUTH",
+    params: [{ name: "depotId", in: "query", type: UUID }],
+  },
+  {
+    method: "get",
+    path: "/api/cash-sessions",
+    tag: "Sessions de caisse",
+    summary:
+      "Sessions du tenant (pagination, filtres dépôt/statut/journées) — les écarts de clôture sont visibles par le gérant.",
+    role: "ADMIN",
+    params: [
+      { name: "depotId", in: "query", type: UUID },
+      { name: "status", in: "query", type: "OPEN|CLOSED" },
+      { name: "from", in: "query", type: DATE },
+      { name: "to", in: "query", type: DATE },
+    ],
+  },
+  {
+    method: "get",
+    path: "/api/cash-sessions/{id}",
+    tag: "Sessions de caisse",
+    summary:
+      "Détail : fond, comptés, Z figé à la clôture (immuable). ADMIN : tout le tenant ; VENDEUR : son dépôt uniquement.",
+    role: "AUTH",
+  },
+  {
+    method: "post",
+    path: "/api/cash-sessions/{id}/close",
+    tag: "Sessions de caisse",
+    summary:
+      "Clôturer la session (ADMIN ou vendeur du dépôt) : compté physique par méthode, écart = compté − attendu, Z ÉMIS et figé, journée VERROUILLÉE (les annulations de ventes de la journée sont bloquées ensuite).",
+    role: "AUTH",
+    body: {
+      countedCash: "number ≥ 0 (espèces comptées — obligatoire)",
+      countedMtn: "number ≥ 0? (solde MTN MoMo constaté)",
+      countedOm: "number ≥ 0? (solde Orange Money constaté)",
+      note: "string?",
+    },
+    errors: ["409 SESSION_ALREADY_CLOSED"],
+  },
+
+  // ------------------------------------------- Facturation & fiscalité (E7)
+  {
+    method: "get",
+    path: "/api/invoices",
+    tag: "Facturation",
+    summary:
+      "Factures et avoirs (numérotation légale continue FAC-…/AV-… par dépôt/série/année, séquence verrouillée, immuabilité — pagination, filtres dépôt/type/période).",
+    role: "ADMIN",
+    params: [
+      { name: "depotId", in: "query", type: UUID },
+      { name: "kind", in: "query", type: "INVOICE|CREDIT_NOTE" },
+      { name: "from", in: "query", type: DATE },
+      { name: "to", in: "query", type: DATE },
+    ],
+  },
+  {
+    method: "get",
+    path: "/api/invoices/by-sale/{saleId}",
+    tag: "Facturation",
+    summary:
+      "Facture (et avoirs éventuels) d'une vente — ventilation HT/TVA/TTC figée. VENDEUR : ventes de son dépôt.",
+    role: "AUTH",
+  },
+  {
+    method: "get",
+    path: "/api/invoices/{id}",
+    tag: "Facturation",
+    summary:
+      "Facture détaillée imprimable : lignes, TVA par ligne, mentions légales du tenant (raison sociale, NIU, RCCM, adresse). VENDEUR : son dépôt.",
+    role: "AUTH",
+  },
+  {
+    method: "get",
+    path: "/api/reports/vat-journal",
+    tag: "Rapports",
+    summary:
+      "Journal de TVA collectée : factures (+) et avoirs (−) ventilés HT/TVA/TTC, synthèse par taux, cadrage jour local tenant. CSV via ?format=csv.",
+    role: "ADMIN",
+    params: [
+      { name: "from", in: "query", type: DATE },
+      { name: "to", in: "query", type: DATE },
+      { name: "depotId", in: "query", type: UUID },
+      { name: "format", in: "query", type: "json|csv" },
+    ],
+  },
+  {
+    method: "get",
+    path: "/api/reports/exports/syscohada-sales",
+    tag: "Rapports",
+    summary:
+      "Export comptable SYSCOHADA — journal des ventes (VT) : DÉBIT règlements (571000/521100/521200) et crédit client (411100), CRÉDIT 701100 HT et 443100 TVA ; avoirs en contrepasse. CSV (séparateur point-virgule).",
+    role: "ADMIN",
+    params: [
+      { name: "from", in: "query", type: DATE },
+      { name: "to", in: "query", type: DATE },
+    ],
+  },
+  {
+    method: "get",
+    path: "/api/reports/exports/syscohada-receivables",
+    tag: "Rapports",
+    summary:
+      "Export SYSCOHADA — créances clients (411100) : solde par client ventilé 0-30/31-60/61-90/>90 j. CSV (séparateur point-virgule).",
+    role: "ADMIN",
+  },
+  {
+    method: "get",
+    path: "/api/reports/exports/syscohada-inventory",
+    tag: "Rapports",
+    summary:
+      "Export SYSCOHADA — inventaire valorisé (311000 marchandises) au CUMP par produit/dépôt. CSV (séparateur point-virgule).",
+    role: "ADMIN",
+    params: [{ name: "depotId", in: "query", type: UUID }],
+  },
+
+  // ------------------------------------------------------------- Maturité (E8)
+  {
+    method: "get",
+    path: "/api/serials/lookup",
+    tag: "Sérialisation",
+    summary:
+      "Recherche garantie/SAV d'un numéro de série (IMEI) : statut, dépôt, vente et n° de facture d'origine. ?serial=…",
+    role: "AUTH",
+    params: [{ name: "serial", in: "query", type: "string" }],
+    errors: ["404"],
+  },
+  {
+    method: "get",
+    path: "/api/serials/product/{productId}",
+    tag: "Sérialisation",
+    summary:
+      "Numéros de série EN STOCK d'un produit (aide à la vente) — filtre dépôt optionnel.",
+    role: "AUTH",
+    params: [{ name: "depotId", in: "query", type: UUID }],
+  },
+  {
+    method: "post",
+    path: "/api/serials/product/{productId}",
+    tag: "Sérialisation",
+    summary:
+      "Enregistrer des numéros de série en stock (complément manuel — doublons refusés avec la liste). Les réceptions fournisseurs les exigent déjà pour les produits sérialisés.",
+    role: "ADMIN",
+    body: { depotId: `${UUID}?`, serials: "string[] (1..500)" },
+    errors: ["409 SERIAL_DUPLICATE"],
+    created: true,
+  },
+  {
+    method: "get",
+    path: "/api/pricing/promotions",
+    tag: "Prix & promotions",
+    summary:
+      "Promotions datées (produit précis ou globales) — pagination, filtre ?active=true (fenêtre en cours).",
+    role: "ADMIN",
+  },
+  {
+    method: "post",
+    path: "/api/pricing/promotions",
+    tag: "Prix & promotions",
+    summary:
+      "Créer une promotion datée : remise automatique à la caisse dans la fenêtre, figée sur la ligne de vente (promo produit prioritaire sur globale).",
+    role: "ADMIN",
+    body: {
+      name: "string",
+      productId: `${UUID}? (NULL = globale)`,
+      discountPct: "0<pct<=100",
+      startsAt: DATE,
+      endsAt: DATE,
+      isActive: "boolean?",
+    },
+    errors: ["400 PROMO_WINDOW_INVALID"],
+    created: true,
+  },
+  {
+    method: "patch",
+    path: "/api/pricing/promotions/{id}",
+    tag: "Prix & promotions",
+    summary: "Modifier/activer/désactiver une promotion.",
+    role: "ADMIN",
+    params: [{ name: "id", in: "path", type: UUID }],
+  },
+  {
+    method: "delete",
+    path: "/api/pricing/promotions/{id}",
+    tag: "Prix & promotions",
+    summary: "Supprimer une promotion.",
+    role: "ADMIN",
+    params: [{ name: "id", in: "path", type: UUID }],
+  },
+  {
+    method: "get",
+    path: "/api/pricing/price-history/{productId}",
+    tag: "Prix & promotions",
+    summary:
+      "Historique horodaté des changements de prix du produit (détail & gros) : ancien → nouveau, qui, quand, motif.",
+    role: "ADMIN",
+  },
+  {
+    method: "get",
+    path: "/api/products/{id}/depot-settings",
+    tag: "Catalogue",
+    summary:
+      "Paramètres par dépôt du produit (E8) : seuil d'alerte effectif par dépôt + rayonnage (bin location).",
+    role: "AUTH",
+    params: [{ name: "id", in: "path", type: UUID }],
+  },
+  {
+    method: "put",
+    path: "/api/products/{id}/depot-settings",
+    tag: "Catalogue",
+    summary:
+      "Définir seuil d'alerte par dépôt (NULL = hérite du catalogue) et rayonnage.",
+    role: "ADMIN",
+    params: [{ name: "id", in: "path", type: UUID }],
+    body: {
+      depotId: UUID,
+      minStockLevel: "number|null",
+      binLocation: "string?",
+    },
+  },
+  {
+    method: "get",
+    path: "/api/reports/stock-kpis",
+    tag: "Rapports",
+    summary:
+      "KPI stock (E8) : valeur au CUMP, rotation 90 j, couverture (jours), classification ABC, stock DORMANT (pas de vente ≥ N j, valeur immobilisée). CSV via ?format=csv.",
+    role: "ADMIN",
+    params: [
+      { name: "depotId", in: "query", type: UUID },
+      { name: "dormantDays", in: "query", type: "number (défaut 60)" },
+      { name: "format", in: "query", type: "json|csv" },
+    ],
+  },
 
   // ------------------------------------------------------------- Caisse (POS)
   {
@@ -709,7 +1367,7 @@ export const ROUTES: RouteDoc[] = [
     path: "/api/reports/margin",
     tag: "Rapports",
     summary:
-      "Marge par produit (prix vente vs achat actuel), triée par marge totale. CSV disponible.",
+      "Marge par produit à COÛT FIGÉ (coût réel de la ligne de vente : lot ou CUMP du jour), triée par marge totale. CSV disponible.",
     role: "ADMIN",
   },
   {
@@ -717,7 +1375,40 @@ export const ROUTES: RouteDoc[] = [
     path: "/api/reports/stock-valuation",
     tag: "Rapports",
     summary:
-      "Valorisation du stock (quantité × prix d’achat), par dépôt. CSV disponible.",
+      "Valorisation du stock au CUMP (coût unitaire moyen pondéré, référentiel SYSCOHADA), par dépôt. CSV disponible.",
+    role: "ADMIN",
+  },
+  {
+    method: "get",
+    path: "/api/reports/cogs",
+    tag: "Rapports",
+    summary:
+      "Coût des marchandises vendues (COGS) de la période : CA, coût réel vendu, marge brute, taux de marge.",
+    role: "ADMIN",
+    params: [
+      { name: "from", in: "query", type: DATE },
+      { name: "to", in: "query", type: DATE },
+      { name: "depotId", in: "query", type: UUID },
+    ],
+  },
+  {
+    method: "get",
+    path: "/api/reports/batch-trace",
+    tag: "Rapports",
+    summary:
+      "Traçabilité / rappel de lot : origine fournisseur, ventes prélevées sur le lot, autres mouvements, quantité restante par dépôt.",
+    role: "ADMIN",
+    params: [
+      { name: "productId", in: "query", type: UUID },
+      { name: "batchNumber", in: "query", type: "string" },
+    ],
+  },
+  {
+    method: "post",
+    path: "/api/reports/costs-revalue",
+    tag: "Rapports",
+    summary:
+      "Revalorisation idempotente de l'historique (E1) : rejeu CUMP des réceptions, coût des lots, figeage rétroactif des lignes de vente sans coût.",
     role: "ADMIN",
   },
   {
@@ -733,8 +1424,12 @@ export const ROUTES: RouteDoc[] = [
     path: "/api/reports/predictive",
     tag: "Rapports",
     summary:
-      "Prévision de rupture : vélocité moyenne 30 jours → date d’épuisement estimée par produit.",
+      "Prévision de rupture : vélocité 30 j → épuisement estimé + suggestion de commande (quantité cible délai fournisseur + 7 j, fournisseur habituel, coût) — bouton « commander » (E4). Cadrage dépôt ?depotId= (seuil effectif par dépôt, E8). CSV via ?format=csv.",
     role: "ADMIN",
+    params: [
+      { name: "depotId", in: "query", type: UUID },
+      { name: "format", in: "query", type: "json|csv" },
+    ],
   },
   {
     method: "get",
@@ -1047,15 +1742,19 @@ export const ROUTES: RouteDoc[] = [
     method: "get",
     path: "/api/configs/tenant",
     tag: "Configuration",
-    summary: "Configuration du tenant courant.",
+    summary:
+      "Configuration du tenant : secrets masqués (sms_password, tokens…) ; préférences métier en clair (cash_session_required…).",
     role: "ADMIN",
   },
   {
     method: "put",
     path: "/api/configs/tenant",
     tag: "Configuration",
-    summary: "Enregistrer la configuration du tenant.",
+    summary:
+      "Enregistrer une clé : secrets (sms_username, sms_api_key, whatsapp_token, whatsapp_phone_id) ou préférence (cash_session_required = « true »/« false » : vendre/encaisser exige une session de caisse ouverte — E6).",
     role: "ADMIN",
+    body: { key: "string", value: "string" },
+    errors: ["400 CONFIG_VALUE_INVALID"],
   },
   {
     method: "get",

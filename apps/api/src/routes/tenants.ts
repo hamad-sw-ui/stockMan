@@ -33,7 +33,7 @@ router.get(
   h(async (req, res) => {
     const u = (req as AuthRequest).user;
     const t = await query(
-      "SELECT id, name, subdomain, logo, primary_color, phone, currency, timezone, is_active FROM tenants WHERE id=$1",
+      "SELECT id, name, subdomain, logo, primary_color, phone, currency, timezone, is_active, niu, rccm, address, invoice_footer FROM tenants WHERE id=$1",
       [u.tenantId],
     );
     const license = await query(
@@ -72,6 +72,11 @@ router.patch(
       phone: z.string().trim().max(50).nullish(),
       currency: z.string().trim().max(10).optional(),
       timezone: z.string().trim().max(64).optional(),
+      // E7 — mentions légales obligatoires (facturation Cameroun)
+      niu: z.string().trim().max(50).nullish(),
+      rccm: z.string().trim().max(100).nullish(),
+      address: z.string().trim().max(1000).nullish(),
+      invoiceFooter: z.string().trim().max(500).nullish(),
     }),
   ),
   h(async (req, res) => {
@@ -80,8 +85,10 @@ router.patch(
     const b = req.body;
     const r = await query(
       `UPDATE tenants SET name=COALESCE($2,name), logo=COALESCE($3,logo), primary_color=COALESCE($4,primary_color),
-              phone=COALESCE($5,phone), currency=COALESCE($6,currency), timezone=COALESCE($7,timezone), updated_at=now()
-        WHERE id=$1 RETURNING id, name, logo, primary_color, phone, currency, timezone`,
+              phone=COALESCE($5,phone), currency=COALESCE($6,currency), timezone=COALESCE($7,timezone),
+              niu=COALESCE($8,niu), rccm=COALESCE($9,rccm), address=COALESCE($10,address),
+              invoice_footer=COALESCE($11,invoice_footer), updated_at=now()
+        WHERE id=$1 RETURNING id, name, logo, primary_color, phone, currency, timezone, niu, rccm, address, invoice_footer`,
       [
         u.tenantId,
         b.name ?? null,
@@ -90,6 +97,10 @@ router.patch(
         b.phone ?? null,
         b.currency ?? null,
         b.timezone ?? null,
+        b.niu ?? null,
+        b.rccm ?? null,
+        b.address ?? null,
+        b.invoiceFooter ?? null,
       ],
     );
     await writeAudit({

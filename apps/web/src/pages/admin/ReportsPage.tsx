@@ -1,7 +1,7 @@
 /** Rapports de pilotage : ventes, marges, valorisation, péremptions, prédictif et Z.
  *  Tous exportables en CSV (fichier généré côté serveur). */
 import { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { BarChart, Donut } from "../../components/charts";
 import {
   Badge,
@@ -21,6 +21,7 @@ import {
   formatQty,
   paymentMethodLabel,
 } from "../../lib/format";
+import type { VatJournal } from "../../lib/types";
 import { useToast } from "../../store/toast";
 
 interface SalesRow {
@@ -44,6 +45,7 @@ interface ValuationRow {
   product: string;
   category: string;
   quantity: number;
+  cump?: number;
   purchase_value: number;
   sale_value: number;
 }
@@ -62,6 +64,11 @@ interface PredictiveRow {
   min_stock_level: number;
   avg_daily_sales: number;
   days_until_stockout: number;
+  suggested_qty: number;
+  purchase_price: number;
+  supplier_id: string | null;
+  supplier_name: string | null;
+  lead_days: number | null;
 }
 interface ZData {
   date: string;
@@ -85,6 +92,7 @@ const VALID_TABS = [
   "peremption",
   "predictif",
   "cloture",
+  "tva",
 ];
 
 export default function ReportsPage() {
@@ -116,6 +124,10 @@ export default function ReportsPage() {
     peremption: { path: "/reports/expiry?days=45", csvName: "" },
     predictif: { path: "/reports/predictive", csvName: "" },
     cloture: { path: `/reports/z-report?date=${to}`, csvName: "" },
+    tva: {
+      path: `/reports/vat-journal?${rangeQuery}`,
+      csvName: `journal_tva_${from}_${to}.csv`,
+    },
   };
 
   const load = async (t = tab) => {
@@ -195,6 +207,7 @@ export default function ReportsPage() {
       return { kind: "peremption", rows: data as ExpiryRow[] } as const;
     if (tab === "predictif")
       return { kind: "predictif", rows: data as PredictiveRow[] } as const;
+    if (tab === "tva") return { kind: "tva", d: data as VatJournal } as const;
     return { kind: "cloture", d: data as ZData } as const;
   }, [data, tab]);
 
@@ -267,6 +280,7 @@ export default function ReportsPage() {
           { id: "peremption", label: "⏳ Péremptions" },
           { id: "predictif", label: "🔮 Prédictif" },
           { id: "cloture", label: "🧮 Clôture Z" },
+          { id: "tva", label: "🧾 TVA & compta" },
         ]}
       />
 
@@ -333,7 +347,11 @@ export default function ReportsPage() {
         <>
           <div className="kpi-grid">
             <Kpi label="CA" value={formatMoney(view.totals.revenue)} />
-            <Kpi label="Coût d’achat" value={formatMoney(view.totals.cost)} />
+            <Kpi
+              label="Coût réel vendu"
+              value={formatMoney(view.totals.cost)}
+              sub="coût figé des lignes (lot / CUMP du jour)"
+            />
             <Kpi
               label="Marge brute"
               value={formatMoney(view.totals.margin)}
@@ -399,7 +417,10 @@ export default function ReportsPage() {
               tone="ok"
             />
           </div>
-          <Card title="Valorisation par dépôt et produit" pad={false}>
+          <Card
+            title="Valorisation par dépôt et produit (au coût réel CUMP)"
+            pad={false}
+          >
             <div className="table-wrap">
               <table>
                 <thead>
@@ -408,6 +429,7 @@ export default function ReportsPage() {
                     <th>Produit</th>
                     <th>Catégorie</th>
                     <th className="num">Quantité</th>
+                    <th className="num">CUMP</th>
                     <th className="num">Valeur achat</th>
                     <th className="num">Valeur vente</th>
                   </tr>
@@ -419,6 +441,9 @@ export default function ReportsPage() {
                       <td style={{ fontWeight: 600 }}>{r.product}</td>
                       <td className="muted">{r.category}</td>
                       <td className="num">{formatQty(r.quantity)}</td>
+                      <td className="num muted">
+                        {r.cump != null ? formatMoney(r.cump) : "—"}
+                      </td>
                       <td className="num">{formatMoney(r.purchase_value)}</td>
                       <td className="num">{formatMoney(r.sale_value)}</td>
                     </tr>
@@ -510,12 +535,25 @@ export default function ReportsPage() {
                     <th className="num">Seuil</th>
                     <th className="num">Ventes/jour</th>
                     <th className="num">Rupture dans</th>
+                    <th className="num">À commander</th>
+                    <th aria-label="Commander" />
                   </tr>
                 </thead>
                 <tbody>
                   {view.rows.map((r) => (
                     <tr key={r.product_id}>
-                      <td style={{ fontWeight: 600 }}>{r.name}</td>
+                      <td style={{ fontWeight: 600 }}>
+                        {r.name}
+                        {r.supplier_name ? (
+                          <div
+                            className="muted"
+                            style={{ fontSize: "0.78rem" }}
+                          >
+                            🚚 {r.supplier_name}
+                            {r.lead_days != null ? ` · ~${r.lead_days} j` : ""}
+                          </div>
+                        ) : null}
+                      </td>
                       <td className="num">{formatQty(r.current_stock)}</td>
                       <td className="num muted">
                         {formatQty(r.min_stock_level)}
@@ -538,6 +576,24 @@ export default function ReportsPage() {
                               : `${r.days_until_stockout} j`}
                         </Badge>
                       </td>
+                      <td className="num" style={{ fontWeight: 700 }}>
+                        {r.suggested_qty > 0 ? formatQty(r.suggested_qty) : "—"}
+                      </td>
+                      <td>
+                        {r.suggested_qty > 0 ? (
+                          <Link
+                            className="btn btn-outline btn-sm"
+                            to={`/admin/commandes?new=1&supplierId=${r.supplier_id ?? ""}&productId=${r.product_id}&qty=${r.suggested_qty}`}
+                            title={
+                              r.supplier_id
+                                ? "Créer le bon de commande pré-rempli"
+                                : "Créer le bon de commande (choisir le fournisseur)"
+                            }
+                          >
+                            📋 Commander
+                          </Link>
+                        ) : null}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -545,6 +601,129 @@ export default function ReportsPage() {
             </div>
           )}
         </Card>
+      ) : view.kind === "tva" ? (
+        <>
+          <div className="kpi-grid">
+            <Kpi label="Base HT" value={formatMoney(view.d.totals.ht)} />
+            <Kpi label="TVA collectée" value={formatMoney(view.d.totals.vat)} />
+            <Kpi label="Total TTC" value={formatMoney(view.d.totals.ttc)} />
+          </div>
+
+          <Card title="Ventilation par taux">
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Taux</th>
+                    <th className="num">Base HT (+factures / −avoirs)</th>
+                    <th className="num">TVA</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {view.d.byRate.map((r) => (
+                    <tr key={r.rate}>
+                      <td>
+                        <Badge tone={r.rate === 0 ? "muted" : "info"}>
+                          {String(r.rate).replace(".", ",")} %
+                        </Badge>
+                      </td>
+                      <td className="num">{formatMoney(r.ht)}</td>
+                      <td className="num">{formatMoney(r.vat)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+
+          <Card title="Journal (factures +, avoirs −)" pad={false}>
+            <div
+              className="table-wrap"
+              style={{ maxHeight: 420, overflow: "auto" }}
+            >
+              <table>
+                <thead>
+                  <tr>
+                    <th>Numéro</th>
+                    <th>Date</th>
+                    <th>Dépôt</th>
+                    <th>Type</th>
+                    <th>Client</th>
+                    <th className="num">HT</th>
+                    <th className="num">TVA</th>
+                    <th className="num">TTC</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {view.d.rows.map((r) => (
+                    <tr key={r.number}>
+                      <td>
+                        <code>{r.number}</code>
+                      </td>
+                      <td>{r.date}</td>
+                      <td>{r.depot}</td>
+                      <td>
+                        <Badge tone={r.kind === "CREDIT_NOTE" ? "warn" : "ok"}>
+                          {r.kind === "CREDIT_NOTE" ? "Avoir" : "Facture"}
+                        </Badge>
+                      </td>
+                      <td>{r.customer ?? "Comptant"}</td>
+                      <td className="num">{formatMoney(r.ht)}</td>
+                      <td className="num">{formatMoney(r.vat)}</td>
+                      <td className="num">{formatMoney(r.ttc)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+
+          <Card title="Exports comptables SYSCOHADA (CSV)">
+            <p className="muted">
+              Écritures prêtes à importer : journal des ventes (VT — 701100 /
+              443100 / 571000 / 521100 / 521200 / 411100), créances clients
+              (411100) et inventaire valorisé au CUMP (311000).
+            </p>
+            <div className="row" style={{ flexWrap: "wrap" }}>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  download(
+                    `/reports/exports/syscohada-sales?${rangeQuery}`,
+                    `syscohada_ventes_${from}_${to}.csv`,
+                  )
+                }
+              >
+                📒 Journal des ventes (VT)
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  download(
+                    "/reports/exports/syscohada-receivables",
+                    `syscohada_creances_${to}.csv`,
+                  )
+                }
+              >
+                🤝 Créances clients
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  download(
+                    "/reports/exports/syscohada-inventory",
+                    `syscohada_inventaire_${to}.csv`,
+                  )
+                }
+              >
+                📦 Inventaire valorisé
+              </Button>
+            </div>
+          </Card>
+        </>
       ) : (
         (() => {
           const z = view.d;

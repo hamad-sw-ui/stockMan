@@ -16,6 +16,7 @@ import {
   money,
 } from "../middleware/validate";
 import { increaseLevel, recordMovement } from "../services/stockService";
+import { recordPriceChange } from "../services/pricingService";
 
 const router = Router();
 router.use(authenticate);
@@ -494,6 +495,20 @@ const productInput = z.object({
   minStockLevel: money.default(0),
   unitId: z.string().uuid().nullish(),
   hasVariants: z.boolean().default(false),
+  /** E7 — taux de TVA en % (prix catalogue = TTC ; 19,25 normal, 0 exonéré). */
+  taxRate: z.coerce.number().min(0).max(100).default(19.25),
+  /** Gestion par lot obligatoire (E2) : numéro de lot exigé à chaque entrée,
+   *  prélevement FEFO tracé et rapport de rappel disponible. */
+  trackBatch: z.boolean().default(false),
+  /** E8 — prix de GROS TTC (unité de base) + seuil d'application ; NULL =
+   *  pas de grille de gros pour ce produit. */
+  wholesalePrice: money.nullish(),
+  wholesaleMinQty: money.default(0),
+  /** E8 — sérialisation (IMEI / n° de série) : vente/entrée à l'unité de
+   *  base identifiée par un numéro unique. */
+  requiresSerial: z.boolean().default(false),
+  /** E8 — motif du changement de prix (PATCH), versé à l'historique. */
+  priceChangeReason: z.string().trim().max(500).nullish(),
   variants: z.array(variantInput).max(200).default([]),
   initialStock: z
     .object({
@@ -520,8 +535,8 @@ router.post(
     }
     const created = await withTransaction(async (client) => {
       const r = await client.query(
-        `INSERT INTO products (tenant_id, name, description, category_id, barcode, purchase_price, selling_price, min_stock_level, unit_id, has_variants)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
+        `INSERT INTO products (tenant_id, name, description, category_id, barcode, purchase_price, selling_price, min_stock_level, unit_id, has_variants, track_batch, avg_cost, tax_rate, wholesale_price, wholesale_min_qty, requires_serial)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING *`,
         [
           u.tenantId,
           b.name,
@@ -533,6 +548,12 @@ router.post(
           b.minStockLevel,
           b.unitId ?? null,
           b.hasVariants,
+          b.trackBatch,
+          b.purchasePrice, // CUMP initial = coût catalogue déclaré
+          b.taxRate,
+          b.wholesalePrice ?? null,
+          b.wholesaleMinQty,
+          b.requiresSerial,
         ],
       );
       const product = r.rows[0];
@@ -623,39 +644,171 @@ router.patch(
       [req.params.id!, u.tenantId],
     );
     if (!prev.rows[0]) throw HttpError.notFound("Produit introuvable.");
+    const prevRow = prev.rows[0] as {
+      selling_price: string;
+      wholesale_price: string | null;
+    };
     const b = req.body;
-    const r = await query(
-      `UPDATE products SET name=COALESCE($3,name), description=COALESCE($4,description),
-              category_id=COALESCE($5,category_id), barcode=COALESCE($6,barcode),
-              purchase_price=COALESCE($7,purchase_price), selling_price=COALESCE($8,selling_price),
-              min_stock_level=COALESCE($9,min_stock_level), unit_id=COALESCE($10,unit_id),
-              has_variants=COALESCE($11,has_variants), updated_at=now()
-        WHERE id=$1 AND tenant_id=$2 RETURNING *`,
-      [
-        req.params.id!,
-        u.tenantId,
-        b.name ?? null,
-        b.description ?? null,
-        b.categoryId ?? null,
-        b.barcode ?? null,
-        b.purchasePrice ?? null,
-        b.sellingPrice ?? null,
-        b.minStockLevel ?? null,
-        b.unitId ?? null,
-        b.hasVariants ?? null,
-      ],
-    );
-    await writeAudit({
-      tenantId: u.tenantId,
-      userId: u.id,
-      userName: u.name,
-      action: "UPDATE",
-      entity: "product",
-      entityId: req.params.id!,
-      previousState: prev.rows[0],
-      newState: r.rows[0],
+    const r = await withTransaction(async (client) => {
+      // E8 — historique horodaté des changements de prix AVANT l'update
+      // (détail & gros, avec motif déclaré le cas échéant).
+      if (b.sellingPrice !== undefined)
+        await recordPriceChange(client, {
+          tenantId: u.tenantId,
+          productId: req.params.id!,
+          field: "DETAIL",
+          oldPrice: parseFloat(prevRow.selling_price),
+          newPrice: b.sellingPrice,
+          changedBy: u.id,
+          reason: b.priceChangeReason ?? null,
+        });
+      if (b.wholesalePrice !== undefined)
+        await recordPriceChange(client, {
+          tenantId: u.tenantId,
+          productId: req.params.id!,
+          field: "WHOLESALE",
+          oldPrice:
+            prevRow.wholesale_price == null
+              ? null
+              : parseFloat(prevRow.wholesale_price),
+          newPrice: b.wholesalePrice ?? null,
+          changedBy: u.id,
+          reason: b.priceChangeReason ?? null,
+        });
+      const upd = await client.query(
+        `UPDATE products SET name=COALESCE($3,name), description=COALESCE($4,description),
+                category_id=COALESCE($5,category_id), barcode=COALESCE($6,barcode),
+                purchase_price=COALESCE($7,purchase_price), selling_price=COALESCE($8,selling_price),
+                min_stock_level=COALESCE($9,min_stock_level), unit_id=COALESCE($10,unit_id),
+                has_variants=COALESCE($11,has_variants), track_batch=COALESCE($12,track_batch),
+                tax_rate=COALESCE($13,tax_rate),
+                wholesale_min_qty=COALESCE($14,wholesale_min_qty),
+                requires_serial=COALESCE($15,requires_serial),
+                wholesale_price=CASE WHEN $16::boolean THEN $17 ELSE wholesale_price END,
+                updated_at=now()
+          WHERE id=$1 AND tenant_id=$2 RETURNING *`,
+        [
+          req.params.id!,
+          u.tenantId,
+          b.name ?? null,
+          b.description ?? null,
+          b.categoryId ?? null,
+          b.barcode ?? null,
+          b.purchasePrice ?? null,
+          b.sellingPrice ?? null,
+          b.minStockLevel ?? null,
+          b.unitId ?? null,
+          b.hasVariants ?? null,
+          b.trackBatch ?? null,
+          b.taxRate ?? null,
+          b.wholesaleMinQty ?? null,
+          b.requiresSerial ?? null,
+          b.wholesalePrice !== undefined, // NULL explicite = grille de gros retirée
+          b.wholesalePrice ?? null,
+        ],
+      );
+      await writeAudit(
+        {
+          tenantId: u.tenantId,
+          userId: u.id,
+          userName: u.name,
+          action: "UPDATE",
+          entity: "product",
+          entityId: req.params.id!,
+          previousState: prev.rows[0],
+          newState: upd.rows[0],
+        },
+        client,
+      );
+      return upd;
     });
     res.json(r.rows[0]);
+  }),
+);
+
+// ============================ PARAMÈTRES PAR DÉPÔT (E8) =====================
+// Seuil d'alerte surchargeable par dépôt + rayonnage (bin location) —
+// l'organisation physique diffère d'un dépôt à l'autre.
+router.get(
+  "/:id/depot-settings",
+  validateParams(uuidParam),
+  h(async (req, res) => {
+    const u = (req as AuthRequest).user;
+    const r = await query(
+      `SELECT d.id AS depot_id, d.name AS depot_name,
+              pds.min_stock_level::float, pds.bin_location, pds.updated_at
+         FROM depots d
+         LEFT JOIN product_depot_settings pds
+           ON pds.depot_id = d.id AND pds.product_id = $1
+        WHERE d.tenant_id = $2 AND d.is_active
+        ORDER BY d.name`,
+      [req.params.id!, u.tenantId],
+    );
+    res.json(r.rows);
+  }),
+);
+
+const depotSettingsInput = z.object({
+  depotId: z.string().uuid(),
+  /** NULL = hériter du seuil catalogue. */
+  minStockLevel: money.nullish(),
+  binLocation: z.string().trim().max(60).nullish(),
+});
+
+router.put(
+  "/:id/depot-settings",
+  ...adminWrite,
+  validateParams(uuidParam),
+  validateBody(depotSettingsInput),
+  h(async (req, res) => {
+    const u = (req as AuthRequest).user;
+    const b = req.body as z.infer<typeof depotSettingsInput>;
+    const saved = await withTransaction(async (client) => {
+      const prod = await client.query<{ id: string }>(
+        "SELECT id FROM products WHERE id=$1 AND tenant_id=$2",
+        [req.params.id!, u.tenantId],
+      );
+      if (!prod.rows[0]) throw HttpError.notFound("Produit introuvable.");
+      const dep = await client.query<{ id: string }>(
+        "SELECT id FROM depots WHERE id=$1 AND tenant_id=$2",
+        [b.depotId, u.tenantId],
+      );
+      if (!dep.rows[0])
+        throw HttpError.badRequest("DEPOT_UNKNOWN", "Dépôt introuvable.");
+      const r = await client.query(
+        `INSERT INTO product_depot_settings (tenant_id, product_id, depot_id, min_stock_level, bin_location, updated_by, updated_at)
+         VALUES ($1,$2,$3,$4,$5,$6,now())
+         ON CONFLICT (product_id, depot_id)
+         DO UPDATE SET min_stock_level=$4, bin_location=$5, updated_by=$6, updated_at=now()
+         RETURNING min_stock_level::float, bin_location, updated_at`,
+        [
+          u.tenantId,
+          req.params.id!,
+          b.depotId,
+          b.minStockLevel ?? null,
+          b.binLocation ?? null,
+          u.id,
+        ],
+      );
+      await writeAudit(
+        {
+          tenantId: u.tenantId,
+          userId: u.id,
+          userName: u.name,
+          action: "UPDATE",
+          entity: "product_depot_settings",
+          entityId: req.params.id!,
+          depotId: b.depotId,
+          newState: {
+            minStockLevel: b.minStockLevel ?? null,
+            binLocation: b.binLocation ?? null,
+          },
+        },
+        client,
+      );
+      return r.rows[0];
+    });
+    res.json(saved);
   }),
 );
 
