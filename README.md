@@ -137,14 +137,15 @@ deploy/ci.yml     Définition CI complète (5 jobs) — à activer, voir encadr�
 
 ## Documentation
 
-| Document                                                           | Contenu                                                                     |
-| ------------------------------------------------------------------ | --------------------------------------------------------------------------- |
-| [`docs/00_AUDIT_GLOBAL.md`](docs/00_AUDIT_GLOBAL.md)               | Audit initial (41 constats) qui a motivé la refonte                         |
-| [`docs/01_MATRICE_INTERFACES.md`](docs/01_MATRICE_INTERFACES.md)   | 42 écrans livrés (v2.1), couverture CRUD par ressource                      |
-| [`docs/02_PLAN_IMPLEMENTATION.md`](docs/02_PLAN_IMPLEMENTATION.md) | Plan en 8 phases — appliqué à 100 %                                         |
-| [`docs/03_EXPLOITATION.md`](docs/03_EXPLOITATION.md)               | Runbook prod : déploiement, sauvegardes, secrets, dépannage, **reprise V1** |
-| [`docs/04_API.md`](docs/04_API.md)                                 | Guide d'intégration API (+ spec OpenAPI 3 servie sur `/api/openapi.json`)   |
-| [`docs/05_AUDIT_EXPERT_STOCK.md`](docs/05_AUDIT_EXPERT_STOCK.md)   | Audit métier expert → phases E1→E8 (CUMP, FEFO, crédit, TVA…) — **livrées** |
+| Document                                                               | Contenu                                                                            |
+| ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| [`docs/00_AUDIT_GLOBAL.md`](docs/00_AUDIT_GLOBAL.md)                   | Audit initial (41 constats) qui a motivé la refonte                                |
+| [`docs/01_MATRICE_INTERFACES.md`](docs/01_MATRICE_INTERFACES.md)       | 42 écrans livrés (v2.1), couverture CRUD par ressource                             |
+| [`docs/02_PLAN_IMPLEMENTATION.md`](docs/02_PLAN_IMPLEMENTATION.md)     | Plan en 8 phases — appliqué à 100 %                                                |
+| [`docs/03_EXPLOITATION.md`](docs/03_EXPLOITATION.md)                   | Runbook prod : déploiement, sauvegardes, secrets, dépannage, **reprise V1**        |
+| [`docs/04_API.md`](docs/04_API.md)                                     | Guide d'intégration API (+ spec OpenAPI 3 servie sur `/api/openapi.json`)          |
+| [`docs/05_AUDIT_EXPERT_STOCK.md`](docs/05_AUDIT_EXPERT_STOCK.md)       | Audit métier expert → phases E1→E8 (CUMP, FEFO, crédit, TVA…) — **livrées**        |
+| [`docs/06_AUDIT_PRO_CODE_BARRES.md`](docs/06_AUDIT_PRO_CODE_BARRES.md) | Audit code-barres « usage pro » + plan C1→C5 (génération, alias, scan, étiquettes) |
 
 ## Variables d'environnement (essentielles)
 
