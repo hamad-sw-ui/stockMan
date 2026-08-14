@@ -51,6 +51,16 @@ function registerShims(db: IMemoryDb) {
     impure: true,
   });
 
+  // length(text) : native en Postgres réel, absente de pg-mem — requise par
+  // la détection de symbologie du backfill V011.
+  pub.registerFunction({
+    name: "length",
+    args: [DataType.text],
+    returns: DataType.integer,
+    implementation: (s: string | null) => (s == null ? null : s.length),
+    impure: false,
+  });
+
   // --- Transactions SQL réelles (BEGIN/COMMIT/ROLLBACK) --------------------
   // L'adaptateur pg de pg-mem exécute chaque client.query() dans un contexte
   // NEUF : le BEGIN fourché n'est jamais repris par les requêtes suivantes —
@@ -187,7 +197,7 @@ export async function seedTenant(ctx: TestContext): Promise<SeedIds> {
   // Produit sans stock initial (le stock arrive via réceptions)
   const prod = await agent.post("/api/products").set(auth).send({
     name: "Eau Test 1.5L",
-    barcode: "6100000000011",
+    barcode: "6100000000018",
     purchasePrice: 200,
     sellingPrice: 400,
     minStockLevel: 5,

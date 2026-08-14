@@ -31,7 +31,7 @@ beforeAll(async () => {
     .set(auth(ids.adminToken))
     .send({
       name: "Téléphone Alpha X",
-      barcode: "3590000000017",
+      barcode: "3590000000010",
       purchasePrice: 50000,
       sellingPrice: 62000,
       unitId: ids.unitId,

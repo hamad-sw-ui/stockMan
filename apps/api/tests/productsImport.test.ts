@@ -46,7 +46,7 @@ describe("POST /api/products/import", () => {
       `Eau Import 50cl;Boissons;6200001;120;250;Pce;10`,
       `"Huile ""Palme"" 5L";Épicerie;6200002;3 500;4 900;Pce;3`,
       `SUCRE 1KG;Épicerie;6200003;300;600;Pce;5`, // casse différente → mise à jour
-      ids.productId ? `Eau Test 1.5L;Boissons;6100000000011;220;450;Pce;8` : "",
+      ids.productId ? `Eau Test 1.5L;Boissons;6100000000018;220;450;Pce;8` : "",
       `Riz Mauvais Prix;Épicerie;6200004;abc;900;Pce;2`,
       `Farine Unité Inconnue;Épicerie;6200005;400;900;ZZZ;2`,
       `;Épicerie;6200006;400;900;Pce;2`,

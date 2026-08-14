@@ -264,7 +264,7 @@ describe("Caisse (POS) — bootstrap hors-ligne, scan, stock vendeur", () => {
 
   it("scan code-barres : produit trouvé, variante trouvée, inconnu 404", async () => {
     const prod = await ctx.agent
-      .get("/api/products/barcode/6100000000011")
+      .get("/api/products/barcode/6100000000018")
       .set(auth(ids.vendorToken));
     expect(prod.status).toBe(200);
     expect(prod.body.matched).toBe("product");
@@ -277,11 +277,11 @@ describe("Caisse (POS) — bootstrap hors-ligne, scan, stock vendeur", () => {
         name: "Parfum Test",
         sellingPrice: 5000,
         hasVariants: true,
-        variants: [{ name: "50 ml", barcode: "6001234500017" }],
+        variants: [{ name: "50 ml", barcode: "6001234500018" }],
       });
     expect(variantProduct.status).toBe(201);
     const variant = await ctx.agent
-      .get("/api/products/barcode/6001234500017")
+      .get("/api/products/barcode/6001234500018")
       .set(auth(ids.vendorToken));
     expect(variant.status).toBe(200);
     expect(variant.body.matched).toBe("variant");
@@ -301,7 +301,7 @@ describe("Caisse (POS) — bootstrap hors-ligne, scan, stock vendeur", () => {
       (x: { name: string }) => x.name === "Parfum Test",
     );
     expect(p.variants).toHaveLength(1);
-    expect(p.variants[0].barcode).toBe("6001234500017");
+    expect(p.variants[0].barcode).toBe("6001234500018");
   });
 
   it("stock du dépôt : recherche en ligne simple pour le vendeur", async () => {

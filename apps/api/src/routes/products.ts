@@ -17,10 +17,27 @@ import {
 } from "../middleware/validate";
 import { increaseLevel, recordMovement } from "../services/stockService";
 import { recordPriceChange } from "../services/pricingService";
+import {
+  dropPrimaryBarcode,
+  findBarcodeHolder,
+  poolWriter,
+  resolveBarcode,
+  syncPrimaryBarcode,
+  throwBarcodeTaken,
+} from "../services/barcodeService";
+import { detectAndValidateBarcode } from "../lib/barcode";
 
 const router = Router();
 router.use(authenticate);
 const adminWrite = [requireRole("ADMIN"), requireActiveLicense()];
+
+/** C1/C2 — valide + normalise un code-barres saisi (GS1 ; null si absent). */
+function normalizeBarcodeInput(raw: string | null | undefined) {
+  if (!raw?.trim()) return null;
+  const v = detectAndValidateBarcode(raw);
+  if (!v.ok) throw HttpError.badRequest("BARCODE_INVALID", v.message);
+  return v;
+}
 
 // ============================ LISTE (paginée, recherche réelle) =============
 const listQuery = pageQuerySchema.extend({
@@ -101,35 +118,226 @@ router.get(
   }),
 );
 
-// ============================ RECHERCHE CODE-BARRES (POS) ===================
+// ============================ RECHERCHE CODE-BARRES =========================
+// C1 — résolveur unique (produit > variante > alias/conditionnement).
+router.get(
+  "/lookup/:code",
+  validateParams(z.object({ code: z.string().trim().min(1).max(100) })),
+  h(async (req, res) => {
+    const t = (req as AuthRequest).user.tenantId;
+    res.json(await resolveBarcode(t, String(req.params.code)));
+  }),
+);
+
+// LEGACY (conservé à l'identique pour la compat: même forme de réponse) —
+// délègue au résolveur C1, donc les alias fonctionnent AUSSI ici.
 router.get(
   "/barcode/:code",
   h(async (req, res) => {
     const t = (req as AuthRequest).user.tenantId;
-    const code = String(req.params.code).trim();
+    const r = await resolveBarcode(t, String(req.params.code));
+    // Forme historique : colonnes produit aplanies + variant_* le cas échéant.
+    res.json({
+      id: r.productId,
+      name: r.productName,
+      barcode: r.productBarcode,
+      selling_price: r.sellingPrice,
+      purchase_price: r.purchasePrice,
+      tax_rate: r.taxRate,
+      wholesale_price: r.wholesalePrice,
+      wholesale_min_qty: r.wholesaleMinQty,
+      has_variants: r.hasVariants,
+      track_batch: r.trackBatch,
+      requires_serial: r.requiresSerial,
+      variant_id: r.variantId,
+      variant_name: r.variantName,
+      additional_price: r.additionalPrice,
+      matched: r.variantId ? "variant" : "product",
+      // Extensions (additives) : conditionnement résolu via alias.
+      unit_id: r.unitId,
+      unit_symbol: r.unitSymbol,
+      unit_factor: r.unitFactor,
+      alias: r.matched === "alias",
+    });
+  }),
+);
+
+// ---- Alias / multi-codes (registre product_barcodes) --------------------
+
+/** Liste les codes (principaux + alias) d'un produit, toutes cibles. */
+router.get(
+  "/:id/barcodes",
+  validateParams(uuidParam),
+  h(async (req, res) => {
+    const u = (req as AuthRequest).user;
     const r = await query(
-      `SELECT p.*, un.symbol AS unit_symbol, un.base_value AS unit_base_value FROM products p
-        LEFT JOIN units un ON un.id = p.unit_id
-       WHERE p.tenant_id=$1 AND p.barcode=$2 AND p.archived_at IS NULL LIMIT 1`,
-      [t, code],
+      `SELECT pb.id, pb.code, pb.symbology, pb.source, pb.is_primary,
+              pb.variant_id, v.name AS variant_name,
+              pb.unit_id, un.symbol AS unit_symbol, un.base_value::float AS unit_base_value,
+              pb.created_at
+         FROM product_barcodes pb
+         JOIN products p ON p.id = pb.product_id
+         LEFT JOIN product_variants v ON v.id = pb.variant_id
+         LEFT JOIN units un ON un.id = pb.unit_id
+        WHERE pb.tenant_id=$1 AND pb.product_id=$2
+        ORDER BY pb.is_primary DESC, pb.created_at`,
+      [u.tenantId, req.params.id!],
     );
-    const product = r.rows[0];
-    if (!product) {
-      const v = await query(
-        `SELECT p.*, v.id AS variant_id, v.name AS variant_name, v.additional_price, un.symbol AS unit_symbol, un.base_value AS unit_base_value
-           FROM product_variants v JOIN products p ON p.id = v.product_id
-           LEFT JOIN units un ON un.id = p.unit_id
-          WHERE p.tenant_id=$1 AND v.barcode=$2 AND p.archived_at IS NULL LIMIT 1`,
-        [t, code],
+    res.json({ rows: r.rows });
+  }),
+);
+
+const aliasInput = z.object({
+  code: z.string().trim().min(1).max(100),
+  variantId: z.string().uuid().nullish(),
+  /** Conditionnement codifié (ex. EAN du carton). */
+  unitId: z.string().uuid().nullish(),
+  source: z.enum(["REGISTERED", "SUPPLIER"]).default("REGISTERED"),
+});
+
+router.post(
+  "/:id/barcodes",
+  ...adminWrite,
+  validateParams(uuidParam),
+  validateBody(aliasInput),
+  h(async (req, res) => {
+    const u = (req as AuthRequest).user;
+    const b = req.body as z.infer<typeof aliasInput>;
+    const productId = req.params.id!;
+
+    const verdict = detectAndValidateBarcode(b.code);
+    if (!verdict.ok)
+      throw HttpError.badRequest("BARCODE_INVALID", verdict.message);
+
+    const created = await withTransaction(async (client) => {
+      const owner = await client.query(
+        "SELECT id FROM products WHERE id=$1 AND tenant_id=$2 AND archived_at IS NULL",
+        [productId, u.tenantId],
       );
-      if (!v.rows[0])
-        throw HttpError.notFound(
-          "Aucun produit pour ce code-barres.",
-          "BARCODE_UNKNOWN",
+      if (!owner.rows[0]) throw HttpError.notFound("Produit introuvable.");
+      if (b.variantId) {
+        const v = await client.query(
+          "SELECT 1 FROM product_variants WHERE id=$1 AND product_id=$2",
+          [b.variantId, productId],
         );
-      return res.json({ ...v.rows[0], matched: "variant" });
-    }
-    res.json({ ...product, matched: "product" });
+        if (!v.rows[0])
+          throw HttpError.badRequest(
+            "VARIANT_UNKNOWN",
+            "Cette variante n'appartient pas au produit.",
+          );
+      }
+      if (b.unitId) {
+        const un = await client.query(
+          "SELECT 1 FROM units WHERE id=$1 AND tenant_id=$2",
+          [b.unitId, u.tenantId],
+        );
+        if (!un.rows[0])
+          throw HttpError.badRequest("UNIT_UNKNOWN", "Unité inconnue.");
+      }
+      // Idempotent (rejouer la même demande répond 200 avec l'existant) ;
+      // conflit avec une AUTRE cible → 409 nommant le détenteur.
+      const existing = await client.query(
+        `SELECT pb.*, p.name AS product_name, v.name AS variant_name
+           FROM product_barcodes pb
+           JOIN products p ON p.id = pb.product_id
+           LEFT JOIN product_variants v ON v.id = pb.variant_id
+          WHERE pb.tenant_id=$1 AND pb.code=$2`,
+        [u.tenantId, verdict.code],
+      );
+      if (existing.rows[0]) {
+        const row = existing.rows[0];
+        const sameTarget =
+          row.product_id === productId &&
+          (row.variant_id ?? null) === (b.variantId ?? null) &&
+          (row.unit_id ?? null) === (b.unitId ?? null);
+        if (sameTarget) return { row, already: true };
+        const holder = await findBarcodeHolder(u.tenantId, verdict.code);
+        if (holder) throwBarcodeTaken(holder, verdict.code);
+      }
+      // Code déjà porté par une colonne legacy (produit ou variante) ?
+      const holder = await findBarcodeHolder(u.tenantId, verdict.code);
+      if (holder) throwBarcodeTaken(holder, verdict.code);
+      const ins = await client.query(
+        `INSERT INTO product_barcodes (tenant_id, product_id, variant_id, unit_id, code, symbology, source, is_primary, created_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,false,$8) RETURNING *`,
+        [
+          u.tenantId,
+          productId,
+          b.variantId ?? null,
+          b.unitId ?? null,
+          verdict.code,
+          verdict.symbology,
+          b.source,
+          u.id,
+        ],
+      );
+      await writeAudit(
+        {
+          tenantId: u.tenantId,
+          userId: u.id,
+          userName: u.name,
+          action: "CREATE",
+          entity: "product_barcode",
+          entityId: ins.rows[0].id,
+          newState: {
+            code: verdict.code,
+            productId,
+            variantId: b.variantId ?? null,
+            unitId: b.unitId ?? null,
+            symbology: verdict.symbology,
+            source: b.source,
+          },
+        },
+        client,
+      );
+      return { row: ins.rows[0], already: false };
+    });
+    res.status(created.already ? 200 : 201).json(created.row);
+  }),
+);
+
+router.delete(
+  "/barcodes/:id",
+  ...adminWrite,
+  validateParams(uuidParam),
+  h(async (req, res) => {
+    const u = (req as AuthRequest).user;
+    const removed = await withTransaction(async (client) => {
+      const r = await client.query(
+        `SELECT pb.*, p.name AS product_name FROM product_barcodes pb
+           JOIN products p ON p.id = pb.product_id
+          WHERE pb.id=$1 AND pb.tenant_id=$2`,
+        [req.params.id!, u.tenantId],
+      );
+      if (!r.rows[0]) throw HttpError.notFound("Code-barres introuvable.");
+      if (r.rows[0].is_primary)
+        throw HttpError.badRequest(
+          "BARCODE_PRIMARY",
+          "Le code principal se retire depuis la fiche produit (champ code-barres).",
+        );
+      await client.query(
+        "DELETE FROM product_barcodes WHERE id=$1 AND tenant_id=$2",
+        [req.params.id!, u.tenantId],
+      );
+      await writeAudit(
+        {
+          tenantId: u.tenantId,
+          userId: u.id,
+          userName: u.name,
+          action: "DELETE",
+          entity: "product_barcode",
+          entityId: req.params.id!,
+          previousState: {
+            code: r.rows[0].code,
+            productId: r.rows[0].product_id,
+            productName: r.rows[0].product_name,
+          },
+        },
+        client,
+      );
+      return r.rows[0];
+    });
+    res.json({ deleted: true, code: removed.code });
   }),
 );
 
@@ -286,9 +494,17 @@ router.post(
         const purchasePrice = price(cols.purchase, "Prix achat");
         const sellingPrice = price(cols.selling, "Prix vente");
         const minStock = price(cols.minStock, "Seuil alerte");
-        const barcode = cell(row, cols.barcode) || null;
-        if (barcode && barcode.length > 100)
-          throw new Error("Code-barres trop long (100 max).");
+        // C1/C2 — code-barres validé + normalisé (GS1) ; une ligne invalide
+        // est rejetée AVEC son motif, sans bloquer le reste du fichier.
+        const barcodeRaw = cell(row, cols.barcode) || null;
+        let barcode: string | null = null;
+        let barcodeSymbology = "CODE39";
+        if (barcodeRaw) {
+          const v = detectAndValidateBarcode(barcodeRaw);
+          if (!v.ok) throw new Error(v.message);
+          barcode = v.code;
+          barcodeSymbology = v.symbology;
+        }
 
         // Unité : symbole ou nom connu ; cellule vide → unité de base du tenant.
         let unitId: string | null = null;
@@ -355,15 +571,15 @@ router.post(
         }
 
         if (product) {
-          // Le code-barres du CSV ne doit pas entrer en conflit avec un AUTRE produit.
+          // Le code-barres du CSV ne doit pas entrer en conflit avec un AUTRE
+          // détenteur (produit, variante OU alias du registre).
           if (barcode && product.barcode !== barcode) {
-            const clash = await query<{ name: string }>(
-              "SELECT name FROM products WHERE tenant_id=$1 AND barcode=$2 AND id<>$3 AND archived_at IS NULL",
-              [u.tenantId, barcode, product.id],
-            );
-            if (clash.rows[0])
+            const holder = await findBarcodeHolder(u.tenantId, barcode, {
+              productId: product.id,
+            });
+            if (holder)
               throw new Error(
-                `Code-barres ${barcode} déjà utilisé par « ${clash.rows[0].name} ».`,
+                `Code-barres ${barcode} déjà utilisé par « ${holder.productName} »${holder.variantName ? ` (variante « ${holder.variantName} »)` : ""}.`,
               );
           }
           await query(
@@ -387,11 +603,29 @@ router.post(
               barcode,
             ],
           );
+          if (barcode)
+            await syncPrimaryBarcode(poolWriter, {
+              tenantId: u.tenantId,
+              productId: product.id,
+              code: barcode,
+              symbology: barcodeSymbology,
+              source: "IMPORTED",
+              userId: u.id,
+            });
           updated += 1;
         } else {
-          await query(
+          // Garde globale : le code ne doit être détenu par PERSONNE
+          // (l'index unique ne couvrait que la colonne produit).
+          if (barcode) {
+            const holder = await findBarcodeHolder(u.tenantId, barcode);
+            if (holder)
+              throw new Error(
+                `Code-barres ${barcode} déjà utilisé par « ${holder.productName} »${holder.variantName ? ` (variante « ${holder.variantName} »)` : ""}.`,
+              );
+          }
+          const ins = await query<{ id: string }>(
             `INSERT INTO products (tenant_id, name, barcode, purchase_price, selling_price, min_stock_level, category_id, unit_id)
-             VALUES ($1,$2,$3,COALESCE($4,0),COALESCE($5,0),COALESCE($6,0),$7,$8)`,
+             VALUES ($1,$2,$3,COALESCE($4,0),COALESCE($5,0),COALESCE($6,0),$7,$8) RETURNING id`,
             [
               u.tenantId,
               name,
@@ -403,6 +637,15 @@ router.post(
               unitId,
             ],
           );
+          if (barcode)
+            await syncPrimaryBarcode(poolWriter, {
+              tenantId: u.tenantId,
+              productId: ins.rows[0]!.id,
+              code: barcode,
+              symbology: barcodeSymbology,
+              source: "IMPORTED",
+              userId: u.id,
+            });
           created += 1;
         }
       } catch (err) {
@@ -533,6 +776,25 @@ router.post(
         "Déclarez au moins une variante ou désactivez hasVariants.",
       );
     }
+    // C1/C2 — codes-barres : validation GS1 (checksums, normalisation) +
+    // garde d'unicité globale (produit / variantes / alias) nommant le
+    // détenteur, AVANT toute écriture.
+    const pCode = normalizeBarcodeInput(b.barcode);
+    const vCodes = b.variants.map((v) => normalizeBarcodeInput(v.barcode));
+    const allCodes = [pCode, ...vCodes].filter(
+      (c): c is NonNullable<typeof c> => c !== null,
+    );
+    const seen = new Set<string>();
+    for (const c of allCodes) {
+      if (seen.has(c.code))
+        throw HttpError.badRequest(
+          "BARCODE_DUP_IN_FORM",
+          `Le code-barres ${c.code} apparaît deux fois dans le formulaire.`,
+        );
+      seen.add(c.code);
+      const holder = await findBarcodeHolder(u.tenantId, c.code);
+      if (holder) throwBarcodeTaken(holder, c.code);
+    }
     const created = await withTransaction(async (client) => {
       const r = await client.query(
         `INSERT INTO products (tenant_id, name, description, category_id, barcode, purchase_price, selling_price, min_stock_level, unit_id, has_variants, track_batch, avg_cost, tax_rate, wholesale_price, wholesale_min_qty, requires_serial)
@@ -542,7 +804,7 @@ router.post(
           b.name,
           b.description ?? null,
           b.categoryId ?? null,
-          b.barcode ?? null,
+          pCode?.code ?? null,
           b.purchasePrice,
           b.sellingPrice,
           b.minStockLevel,
@@ -557,19 +819,39 @@ router.post(
         ],
       );
       const product = r.rows[0];
-      for (const v of b.variants) {
-        await client.query(
+      // Write-through : le code principal alimente le registre d'alias.
+      if (pCode)
+        await syncPrimaryBarcode(client, {
+          tenantId: u.tenantId,
+          productId: product.id,
+          code: pCode.code,
+          symbology: pCode.symbology,
+          userId: u.id,
+        });
+      for (let i = 0; i < b.variants.length; i += 1) {
+        const v = b.variants[i]!;
+        const vc = vCodes[i] ?? null;
+        const vr = await client.query(
           `INSERT INTO product_variants (product_id, name, sku, barcode, additional_price, attributes)
-           VALUES ($1,$2,$3,$4,$5,$6)`,
+           VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
           [
             product.id,
             v.name,
             v.sku ?? null,
-            v.barcode ?? null,
+            vc?.code ?? null,
             v.additionalPrice,
             JSON.stringify(v.attributes),
           ],
         );
+        if (vc)
+          await syncPrimaryBarcode(client, {
+            tenantId: u.tenantId,
+            productId: product.id,
+            variantId: vr.rows[0].id,
+            code: vc.code,
+            symbology: vc.symbology,
+            userId: u.id,
+          });
       }
       if (b.initialStock && b.initialStock.quantity > 0) {
         const depotOk = await client.query(
@@ -649,6 +931,17 @@ router.patch(
       wholesale_price: string | null;
     };
     const b = req.body;
+    // C1/C2 — code-barres : validation GS1 + unicité hors soi-même. La clé
+    // « barcode » PRÉSENTE (même à null) pilote le champ (CASE WHEN) : un
+    // null explicite retire le code (et son miroir dans le registre).
+    const barcodeDefined = b.barcode !== undefined;
+    const pCode = normalizeBarcodeInput(b.barcode);
+    if (pCode) {
+      const holder = await findBarcodeHolder(u.tenantId, pCode.code, {
+        productId: req.params.id!,
+      });
+      if (holder) throwBarcodeTaken(holder, pCode.code);
+    }
     const r = await withTransaction(async (client) => {
       // E8 — historique horodaté des changements de prix AVANT l'update
       // (détail & gros, avec motif déclaré le cas échéant).
@@ -677,14 +970,15 @@ router.patch(
         });
       const upd = await client.query(
         `UPDATE products SET name=COALESCE($3,name), description=COALESCE($4,description),
-                category_id=COALESCE($5,category_id), barcode=COALESCE($6,barcode),
-                purchase_price=COALESCE($7,purchase_price), selling_price=COALESCE($8,selling_price),
-                min_stock_level=COALESCE($9,min_stock_level), unit_id=COALESCE($10,unit_id),
-                has_variants=COALESCE($11,has_variants), track_batch=COALESCE($12,track_batch),
-                tax_rate=COALESCE($13,tax_rate),
-                wholesale_min_qty=COALESCE($14,wholesale_min_qty),
-                requires_serial=COALESCE($15,requires_serial),
-                wholesale_price=CASE WHEN $16::boolean THEN $17 ELSE wholesale_price END,
+                category_id=COALESCE($5,category_id),
+                barcode=CASE WHEN $6::boolean THEN $7 ELSE barcode END,
+                purchase_price=COALESCE($8,purchase_price), selling_price=COALESCE($9,selling_price),
+                min_stock_level=COALESCE($10,min_stock_level), unit_id=COALESCE($11,unit_id),
+                has_variants=COALESCE($12,has_variants), track_batch=COALESCE($13,track_batch),
+                tax_rate=COALESCE($14,tax_rate),
+                wholesale_min_qty=COALESCE($15,wholesale_min_qty),
+                requires_serial=COALESCE($16,requires_serial),
+                wholesale_price=CASE WHEN $17::boolean THEN $18 ELSE wholesale_price END,
                 updated_at=now()
           WHERE id=$1 AND tenant_id=$2 RETURNING *`,
         [
@@ -693,7 +987,8 @@ router.patch(
           b.name ?? null,
           b.description ?? null,
           b.categoryId ?? null,
-          b.barcode ?? null,
+          barcodeDefined, // présence de la clé (null explicite = retrait)
+          pCode?.code ?? null,
           b.purchasePrice ?? null,
           b.sellingPrice ?? null,
           b.minStockLevel ?? null,
@@ -707,6 +1002,22 @@ router.patch(
           b.wholesalePrice ?? null,
         ],
       );
+      // Write-through registre : miroir du code principal (pose ou retrait).
+      if (barcodeDefined) {
+        if (pCode)
+          await syncPrimaryBarcode(client, {
+            tenantId: u.tenantId,
+            productId: req.params.id!,
+            code: pCode.code,
+            symbology: pCode.symbology,
+            userId: u.id,
+          });
+        else
+          await dropPrimaryBarcode(client, {
+            tenantId: u.tenantId,
+            productId: req.params.id!,
+          });
+      }
       await writeAudit(
         {
           tenantId: u.tenantId,
@@ -878,22 +1189,41 @@ router.post(
     );
     if (!owner.rows[0]) throw HttpError.notFound("Produit introuvable.");
     const b = req.body;
-    const r = await query(
-      `INSERT INTO product_variants (product_id, name, sku, barcode, additional_price, attributes)
-       VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
-      [
-        req.params.id!,
-        b.name,
-        b.sku ?? null,
-        b.barcode ?? null,
-        b.additionalPrice,
-        JSON.stringify(b.attributes),
-      ],
-    );
-    await query("UPDATE products SET has_variants=true WHERE id=$1", [
-      req.params.id,
-    ]);
-    res.status(201).json(r.rows[0]);
+    // C1/C2 — validation GS1 + unicité globale avant insertion (correctif
+    // majeur : product_variants.barcode n'avait AUCUNE contrainte d'unicité).
+    const vCode = normalizeBarcodeInput(b.barcode);
+    if (vCode) {
+      const holder = await findBarcodeHolder(u.tenantId, vCode.code);
+      if (holder) throwBarcodeTaken(holder, vCode.code);
+    }
+    const createdVariant = await withTransaction(async (client) => {
+      const r = await client.query(
+        `INSERT INTO product_variants (product_id, name, sku, barcode, additional_price, attributes)
+         VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
+        [
+          req.params.id!,
+          b.name,
+          b.sku ?? null,
+          vCode?.code ?? null,
+          b.additionalPrice,
+          JSON.stringify(b.attributes),
+        ],
+      );
+      if (vCode)
+        await syncPrimaryBarcode(client, {
+          tenantId: u.tenantId,
+          productId: req.params.id!,
+          variantId: r.rows[0].id,
+          code: vCode.code,
+          symbology: vCode.symbology,
+          userId: u.id,
+        });
+      await client.query("UPDATE products SET has_variants=true WHERE id=$1", [
+        req.params.id,
+      ]);
+      return r.rows[0];
+    });
+    res.status(201).json(createdVariant);
   }),
 );
 
@@ -905,24 +1235,56 @@ router.patch(
   h(async (req, res) => {
     const u = (req as AuthRequest).user;
     const b = req.body;
-    const r = await query(
-      `UPDATE product_variants v SET name=COALESCE($2,name), sku=COALESCE($3,sku), barcode=COALESCE($4,barcode),
-              additional_price=COALESCE($5,additional_price), attributes=COALESCE($6,attributes), updated_at=now()
-         FROM products p
-        WHERE v.id=$1 AND v.product_id=p.id AND p.tenant_id=$7
-        RETURNING v.*`,
-      [
-        req.params.id!,
-        b.name ?? null,
-        b.sku ?? null,
-        b.barcode ?? null,
-        b.additionalPrice ?? null,
-        b.attributes ? JSON.stringify(b.attributes) : null,
-        u.tenantId,
-      ],
-    );
-    if (!r.rows[0]) throw HttpError.notFound("Variante introuvable.");
-    res.json(r.rows[0]);
+    // C1/C2 — validation GS1 + unicité hors cette variante (null explicite
+    // = retrait du code, miroir dans le registre).
+    const barcodeDefined = b.barcode !== undefined;
+    const vCode = normalizeBarcodeInput(b.barcode);
+    if (vCode) {
+      const holder = await findBarcodeHolder(u.tenantId, vCode.code, {
+        variantId: req.params.id!,
+      });
+      if (holder) throwBarcodeTaken(holder, vCode.code);
+    }
+    const updatedVariant = await withTransaction(async (client) => {
+      const r = await client.query(
+        `UPDATE product_variants v SET name=COALESCE($2,name), sku=COALESCE($3,sku),
+                barcode=CASE WHEN $4::boolean THEN $5 ELSE barcode END,
+                additional_price=COALESCE($6,additional_price), attributes=COALESCE($7,attributes), updated_at=now()
+           FROM products p
+          WHERE v.id=$1 AND v.product_id=p.id AND p.tenant_id=$8
+          RETURNING v.*`,
+        [
+          req.params.id!,
+          b.name ?? null,
+          b.sku ?? null,
+          barcodeDefined,
+          vCode?.code ?? null,
+          b.additionalPrice ?? null,
+          b.attributes ? JSON.stringify(b.attributes) : null,
+          u.tenantId,
+        ],
+      );
+      if (!r.rows[0]) throw HttpError.notFound("Variante introuvable.");
+      if (barcodeDefined) {
+        if (vCode)
+          await syncPrimaryBarcode(client, {
+            tenantId: u.tenantId,
+            productId: r.rows[0].product_id,
+            variantId: req.params.id!,
+            code: vCode.code,
+            symbology: vCode.symbology,
+            userId: u.id,
+          });
+        else
+          await dropPrimaryBarcode(client, {
+            tenantId: u.tenantId,
+            productId: r.rows[0].product_id,
+            variantId: req.params.id!,
+          });
+      }
+      return r.rows[0];
+    });
+    res.json(updatedVariant);
   }),
 );
 

@@ -30,7 +30,7 @@ beforeAll(async () => {
     .set(auth(ids.adminToken))
     .send({
       name: "Lait UHT 1L",
-      barcode: "6210000000010",
+      barcode: "6210000000014",
       purchasePrice: 500,
       sellingPrice: 700,
       unitId: ids.unitId,
@@ -44,7 +44,7 @@ beforeAll(async () => {
     .set(auth(ids.adminToken))
     .send({
       name: "Smartphone Beta",
-      barcode: "3590010000016",
+      barcode: "3590010000017",
       purchasePrice: 80000,
       sellingPrice: 99000,
       unitId: ids.unitId,
@@ -69,7 +69,7 @@ describe("Import CSV du stock initial (E8)", () => {
   it("réception groupée atomique + erreurs par ligne (inconnu, lot manquant, sérialisé, quantité illisible)", async () => {
     const csv = [
       "Produit;Quantité;Coût;Lot;Expiration",
-      "6100000000011;40;190;;", // produit seed (par code-barres)
+      "6100000000018;40;190;;", // produit seed (par code-barres)
       "Produit Inconnu;5;100;;",
       "Lait UHT 1L;12;480;;", // lot obligatoire manquant
       "Smartphone Beta;2;75000;;", // sérialisé : refusé

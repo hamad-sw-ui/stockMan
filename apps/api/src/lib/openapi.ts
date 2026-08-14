@@ -357,7 +357,10 @@ export const ROUTES: RouteDoc[] = [
       variants: "array?",
       initialStock: "{ depotId, quantity, batchNumber?, expiryDate? }?",
     },
-    errors: ["409 NAME_TAKEN / BARCODE_TAKEN"],
+    errors: [
+      "400 BARCODE_INVALID / BARCODE_DUP_IN_FORM",
+      "409 NAME_TAKEN / BARCODE_TAKEN",
+    ],
     created: true,
   },
   {
@@ -365,10 +368,59 @@ export const ROUTES: RouteDoc[] = [
     path: "/api/products/barcode/{code}",
     tag: "Produits",
     summary:
-      "Recherche exacte par code-barres (produit puis variante) — usage caisse/douchette.",
+      "Recherche exacte par code-barres (produit puis variante puis alias) — usage caisse/douchette. Forme de réponse historique (compat).",
     role: "AUTH",
     params: [{ name: "code", in: "path" }],
     errors: ["404 BARCODE_UNKNOWN"],
+  },
+  {
+    method: "get",
+    path: "/api/products/lookup/{code}",
+    tag: "Produits",
+    summary:
+      "Résolveur C1 enrichi : produit > variante > alias/conditionnement, avec facteur de conversion (unit_factor) et symbologie détectée.",
+    role: "AUTH",
+    params: [{ name: "code", in: "path" }],
+    errors: ["404 BARCODE_UNKNOWN"],
+  },
+  {
+    method: "get",
+    path: "/api/products/{id}/barcodes",
+    tag: "Produits",
+    summary:
+      "Liste tous les codes-barres d'un produit (principal + alias fournisseurs + conditionnements).",
+    role: "AUTH",
+    params: [{ name: "id", in: "path", type: UUID }],
+  },
+  {
+    method: "post",
+    path: "/api/products/{id}/barcodes",
+    tag: "Produits",
+    summary:
+      "Ajoute un code-barres alias (fournisseur ou conditionnement carton/palette) à un produit ou une variante. Idempotent si même cible.",
+    role: "ADMIN",
+    params: [{ name: "id", in: "path", type: UUID }],
+    body: {
+      code: "string",
+      variantId: "uuid?",
+      unitId: "uuid?",
+      source: "REGISTERED | SUPPLIER",
+    },
+    errors: [
+      "400 BARCODE_INVALID / VARIANT_UNKNOWN / UNIT_UNKNOWN",
+      "409 BARCODE_TAKEN",
+    ],
+    created: true,
+  },
+  {
+    method: "delete",
+    path: "/api/products/barcodes/{id}",
+    tag: "Produits",
+    summary:
+      "Retire un alias du registre (le code principal se gère dans la fiche produit).",
+    role: "ADMIN",
+    params: [{ name: "id", in: "path", type: UUID }],
+    errors: ["400 BARCODE_PRIMARY", "404 NOT_FOUND"],
   },
   {
     method: "get",

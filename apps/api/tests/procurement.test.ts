@@ -349,7 +349,7 @@ describe("E4 — Approvisionnement", () => {
     const pid = "11111111-2222-4333-8444-555555555555"; // produit dédié, créé via API ci-dessous
     const prod = await ctx.agent.post("/api/products").set(auth()).send({
       name: "Savon retour",
-      barcode: "6100000000999",
+      barcode: "6100000000995",
       purchasePrice: 150,
       sellingPrice: 300,
       unitId: ids.unitId,

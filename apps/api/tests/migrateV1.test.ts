@@ -301,6 +301,14 @@ beforeAll(async () => {
     implementation: (v: string) => v.trim(),
     impure: false,
   });
+  // length() : native en Postgres réel (backfill symbologie de V011).
+  db.public.registerFunction({
+    name: "length",
+    args: [DataType.text],
+    returns: DataType.integer,
+    implementation: (v: string | null) => (v == null ? null : v.length),
+    impure: false,
+  });
   const { Pool: MemPool } = db.adapters.createPg();
   pool = new MemPool();
   await pool.query(loadLegacySchema());
@@ -511,18 +519,13 @@ describe("migrateur V1 → V2", () => {
     const mig = await q.query(
       "SELECT version FROM schema_migrations ORDER BY version",
     );
-    expect(mig.rows.map((r) => r.version)).toEqual([
-      "V001",
-      "V002",
-      "V003",
-      "V004",
-      "V005",
-      "V006",
-      "V007",
-      "V008",
-      "V009",
-      "V010",
-    ]);
+    // Chaîne attendue = fichiers réellement présents (pérenne pour V012+).
+    const expectedVersions = fs
+      .readdirSync(MIGRATIONS_DIR)
+      .filter((f) => /^V\d+__/.test(f))
+      .map((f) => f.split("__")[0]!)
+      .sort();
+    expect(mig.rows.map((r) => r.version)).toEqual(expectedVersions);
     for (const t of [
       "stock_levels",
       "stock_receipts",
@@ -530,6 +533,7 @@ describe("migrateur V1 → V2", () => {
       "plans",
       "sale_returns",
       "tenant_configs",
+      "product_barcodes",
     ]) {
       const r = await q.query(
         `SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND table_name='${t}'`,
