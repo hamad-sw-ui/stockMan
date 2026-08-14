@@ -179,8 +179,13 @@ router.get(
       [req.params.id!, t],
     );
     if (!r.rows[0]) throw HttpError.notFound("Réception introuvable.");
+    // C4 — les codes et le prix de vente accompagnent chaque ligne : le
+    // détail d'une réception doit pouvoir imprimer ses étiquettes en un
+    // clic (code de la variante si la ligne en porte une).
     const items = await query(
-      `SELECT i.*, p.name AS product_name, v.name AS variant_name, bt.batch_number
+      `SELECT i.*, p.name AS product_name, v.name AS variant_name, bt.batch_number,
+              p.barcode AS product_barcode, v.barcode AS variant_barcode,
+              p.selling_price::float AS selling_price
          FROM stock_receipt_items i
          JOIN products p ON p.id=i.product_id
          LEFT JOIN product_variants v ON v.id=i.variant_id

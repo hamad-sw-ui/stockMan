@@ -240,6 +240,24 @@ describe("C3 — flux physiques pilotés par le scan", () => {
     expect(await level(ids.productId, ids.depotId)).toBe(24); // 29 − 5
   });
 
+  it("C4 — détail réception : codes et prix de vente présents (impression d'étiquettes)", async () => {
+    const rcv = await ctx.agent
+      .post("/api/stock/receipts")
+      .set(auth(ids.adminToken))
+      .send({
+        depotId: ids.depotId,
+        items: [{ productId: ids.productId, quantity: 1, unitCost: 200 }],
+      });
+    expect(rcv.status).toBe(201);
+    const det = await ctx.agent
+      .get(`/api/stock/receipts/${rcv.body.receiptId}`)
+      .set(auth(ids.adminToken));
+    expect(det.status).toBe(200);
+    const line = det.body.items[0]!;
+    expect(line.product_barcode).toBe("6100000000018");
+    expect(line.selling_price).toBe(400);
+  });
+
   it("campagne d'inventaire : comptage saisi par produit scanné", async () => {
     const camp = await ctx.agent
       .post("/api/inventory-campaigns")

@@ -38,6 +38,9 @@ import {
   CameraScanner,
   cameraScanSupported,
 } from "../../components/CameraScanner";
+import { LabelsPrintModal } from "../../components/LabelsPrintModal";
+import { useAuth } from "../../store/auth";
+import type { LabelLine } from "../../lib/labels";
 import type { BarcodeLookupResult } from "../../lib/scanLookup";
 
 interface LineForm {
@@ -57,6 +60,8 @@ interface LineForm {
 
 export default function ReceiptsPage() {
   const { show } = useToast();
+  const { user } = useAuth();
+  const tenantName = user?.tenant.name ?? null;
   const [page, setPage] = useState(1);
   const path = `/stock/receipts?page=${page}&size=20`;
   const q = useQuery<Paged<ReceiptRow>>(`receipts:${path}`, path);
@@ -93,10 +98,16 @@ export default function ReceiptsPage() {
           batch_number: string | null;
           base_qty: number;
           unit_cost: number;
+          // C4 — impression d'étiquettes depuis la réception
+          product_barcode: string | null;
+          variant_barcode: string | null;
+          selling_price: number;
         }>;
       })
     | null
   >(null);
+  // C4 — modale « Imprimer les étiquettes de cette réception ».
+  const [labelsOpen, setLabelsOpen] = useState(false);
 
   const reset = () => {
     setSupplierId("");
@@ -834,7 +845,31 @@ export default function ReceiptsPage() {
           <p style={{ textAlign: "right", fontWeight: 800 }}>
             Total : {formatMoney(detail.total_cost)}
           </p>
+          {/* C4 — un clic : les étiquettes de ce qui vient d'être reçu */}
+          <div
+            className="row"
+            style={{ justifyContent: "flex-end", marginTop: 10 }}
+          >
+            <Button variant="outline" onClick={() => setLabelsOpen(true)}>
+              🏷 Étiquettes de la réception
+            </Button>
+          </div>
         </Modal>
+      ) : null}
+      {detail && labelsOpen ? (
+        <LabelsPrintModal
+          title={`Étiquettes — réception ${detail.reference ?? ""}`}
+          lines={detail.items.map((i): LabelLine => ({
+            key: i.id,
+            name: `${i.product_name}${i.variant_name ? ` · ${i.variant_name}` : ""}`,
+            code: i.variant_barcode ?? i.product_barcode,
+            price: i.selling_price,
+            qty: Math.max(0, Math.round(i.base_qty)),
+          }))}
+          shopName={tenantName}
+          depotName={detail.depot_name}
+          onClose={() => setLabelsOpen(false)}
+        />
       ) : null}
     </div>
   );

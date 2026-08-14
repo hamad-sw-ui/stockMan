@@ -17,9 +17,11 @@ import {
 } from "../../components/ui";
 import { download, upload } from "../../lib/http";
 import { ScanField } from "../../components/ScanField";
+import { LabelsPrintModal } from "../../components/LabelsPrintModal";
 import { formatMoney, formatQty, stockStatusLabel } from "../../lib/format";
 import { invalidateQueries, useQuery } from "../../lib/query";
 import { useToast } from "../../store/toast";
+import { useAuth } from "../../store/auth";
 import type { Category, Depot, Paged, ProductListItem } from "../../lib/types";
 
 interface ImportResult {
@@ -33,6 +35,8 @@ const tone = (s: "ok" | "low" | "out"): "ok" | "warn" | "danger" =>
   s === "ok" ? "ok" : s === "low" ? "warn" : "danger";
 
 export default function ProductsPage() {
+  const { user } = useAuth();
+  const tenantName = user?.tenant.name ?? null;
   const [params, setParams] = useSearchParams();
   const [search, setSearch] = useState(params.get("search") ?? "");
   const [page, setPage] = useState(1);
@@ -81,6 +85,16 @@ export default function ProductsPage() {
   const fileRef = useRef<HTMLInputElement>(null);
   const [importing, setImporting] = useState(false);
   const [report, setReport] = useState<ImportResult | null>(null);
+  // C4 — file d'impression d'étiquettes (multi-sélection du tableau)
+  const [labelPick, setLabelPick] = useState<Set<string>>(new Set());
+  const [labelsOpen, setLabelsOpen] = useState(false);
+  const toggleLabelPick = (id: string) =>
+    setLabelPick((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   const importCsv = async (file: File) => {
     if (file.size > 280 * 1024) {
       show("Fichier trop lourd (280 Ko max, soit 500 lignes).", "error");
@@ -246,6 +260,7 @@ export default function ProductsPage() {
             <table>
               <thead>
                 <tr>
+                  <th aria-label="Sélection étiquettes" style={{ width: 30 }} />
                   <th>Produit</th>
                   <th>Catégorie</th>
                   <th className="num">Prix vente</th>
@@ -266,6 +281,20 @@ export default function ProductsPage() {
                     style={{ cursor: "pointer" }}
                     onClick={() => navigate(`/admin/produits/${p.id}`)}
                   >
+                    <td onClick={(e) => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        checked={labelPick.has(p.id)}
+                        onChange={() => toggleLabelPick(p.id)}
+                        aria-label={`Étiquette : sélectionner ${p.name}`}
+                        disabled={!p.barcode}
+                        title={
+                          p.barcode
+                            ? "Ajouter à la file d'étiquettes"
+                            : "Sans code-barres : non étiquetable"
+                        }
+                      />
+                    </td>
                     <td>
                       <div style={{ fontWeight: 700 }}>{p.name}</div>
                       <div className="muted" style={{ fontSize: "0.8rem" }}>
@@ -308,6 +337,55 @@ export default function ProductsPage() {
           totalPages={products.data.totalPages}
           total={products.data.total}
           onPage={setPage}
+        />
+      ) : null}
+      {/* C4 — barre flottante « file d'étiquettes » */}
+      {labelPick.size > 0 ? (
+        <div
+          className="row"
+          style={{
+            position: "sticky",
+            bottom: 12,
+            justifyContent: "space-between",
+            background: "var(--surface)",
+            border: "1px solid var(--line, #d7dee6)",
+            borderRadius: "var(--radius, 8px)",
+            padding: "10px 14px",
+            boxShadow: "var(--shadow-m, 0 6px 18px rgba(15,23,42,.12))",
+            marginTop: 10,
+          }}
+        >
+          <span style={{ fontWeight: 600 }}>
+            🏷 {labelPick.size} produit(s) dans la file d'étiquettes
+          </span>
+          <div className="row" style={{ gap: 8 }}>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setLabelPick(new Set())}
+            >
+              Vider
+            </Button>
+            <Button size="sm" onClick={() => setLabelsOpen(true)}>
+              Imprimer les étiquettes
+            </Button>
+          </div>
+        </div>
+      ) : null}
+      {labelsOpen ? (
+        <LabelsPrintModal
+          title="Étiquettes — sélection produits"
+          lines={(products.data?.data ?? [])
+            .filter((p) => labelPick.has(p.id))
+            .map((p) => ({
+              key: p.id,
+              name: p.name,
+              code: p.barcode,
+              price: p.selling_price,
+              qty: 1,
+            }))}
+          shopName={tenantName}
+          onClose={() => setLabelsOpen(false)}
         />
       ) : null}
 
