@@ -32,6 +32,8 @@ import { ApiError, get, post } from "../../lib/http";
 import { enqueueSale } from "../../lib/offline/outbox";
 import { installAutoSync } from "../../lib/offline/sync";
 import { usePosBootstrap, type BootstrapStatus } from "../../lib/pos";
+import { resolvePosScan } from "../../lib/posScan";
+import { lookupBarcode } from "../../lib/scanLookup";
 import { useOnlineStatus } from "../../components/Shell";
 import { useToast } from "../../store/toast";
 import type {
@@ -140,7 +142,16 @@ export default function PosPage() {
   const total = cartTotal(cart);
 
   /* ----------------------------- Actions panier ---------------------------- */
-  const addToCart = (productId: string, variantId: string | null = null) => {
+  const addToCart = (
+    productId: string,
+    variantId: string | null = null,
+    // Unité imposée par un scan de conditionnement (C3) : « carton ×12 ».
+    unitOverride: {
+      id: string;
+      symbol: string;
+      baseValue: number;
+    } | null = null,
+  ) => {
     if (!b) return;
     const p = b.products.find((x) => x.id === productId);
     if (!p) return;
@@ -154,7 +165,16 @@ export default function PosPage() {
       setSerialPick({ productId, variantId });
       return;
     }
-    const unit = p.unit_id ? (unitById.get(p.unit_id) ?? null) : null;
+    const knownUnit = p.unit_id ? (unitById.get(p.unit_id) ?? null) : null;
+    const unit =
+      unitOverride ??
+      (knownUnit
+        ? {
+            id: knownUnit.id,
+            symbol: knownUnit.symbol,
+            baseValue: knownUnit.base_value,
+          }
+        : null);
     const line = makeLine({
       product: {
         id: p.id,
@@ -173,9 +193,7 @@ export default function PosPage() {
             barcode: v.barcode,
           }
         : null,
-      unit: unit
-        ? { id: unit.id, symbol: unit.symbol, baseValue: unit.base_value }
-        : null,
+      unit,
       quantity: 1,
     });
     setCart((prev) => {
@@ -278,23 +296,88 @@ export default function PosPage() {
   const removeLine = (key: string) =>
     setCart((prev) => prev.filter((l) => l.key !== key));
 
-  /** Ajout au panier par code-barres exact (produit ou variante) — chemin
-   *  commun à la douchette USB, à la saisie Entrée et au scanner caméra. */
+  /** Ajout au panier par code-barres (C3) — hors-ligne, priorité stricte :
+   *  produit > variante > alias fournisseur/conditionnement (l'unité scannée
+   *  suit son facteur, recalculé par le moteur cart.ts). Chemin commun à la
+   *  douchette USB, à la saisie Entrée et au scanner caméra. */
   const addByBarcode = (code: string): boolean => {
     if (!code || !b) return false;
-    const byProduct = b.products.find((p) => p.barcode === code);
-    if (byProduct) {
-      pickProduct(byProduct.id);
+    const hit = resolvePosScan(b, code);
+    if (!hit) return false;
+    if (hit.kind === "product") {
+      pickProduct(hit.productId);
       return true;
     }
-    for (const p of b.products) {
-      const v = p.variants.find((x) => x.barcode === code);
-      if (v) {
-        addToCart(p.id, v.id);
+    if (hit.kind === "variant") {
+      addToCart(hit.productId, hit.variantId);
+      return true;
+    }
+    // Alias (code fournisseur ou conditionnement « carton »).
+    const p = b.products.find((x) => x.id === hit.productId);
+    if (!p) return false;
+    // Produit sérialisé (IMEI) : vente à l'unité de base uniquement
+    // (invariant serveur SERIAL_BASE_UNIT_ONLY) → pas d'unité imposée.
+    let unitOverride: { id: string; symbol: string; baseValue: number } | null =
+      null;
+    if (hit.unitId && !p.requires_serial) {
+      const known = unitById.get(hit.unitId);
+      if (known)
+        unitOverride = {
+          id: known.id,
+          symbol: known.symbol,
+          baseValue: known.base_value,
+        };
+      else if (hit.unitBaseValue != null)
+        unitOverride = {
+          id: hit.unitId,
+          symbol: hit.unitSymbol ?? "—",
+          baseValue: hit.unitBaseValue,
+        };
+    }
+    addToCart(hit.productId, hit.variantId, unitOverride);
+    return true;
+  };
+
+  /** Repli connecté (C3) : code inconnu du bootstrap local (ex. alias au-delà
+   *  des 5 000 chargés, catalogue tronqué) → résolveur serveur C1. Le ticket
+   *  garde ses garanties hors-ligne : la validation de la vente reste gérée
+   *  par la file idempotente. */
+  const addByBarcodeOnline = async (code: string): Promise<boolean> => {
+    if (!online || !b) return false;
+    try {
+      const r = await lookupBarcode(code);
+      if (r.matched === "product") {
+        pickProduct(r.productId);
         return true;
       }
+      const p = b.products.find((x) => x.id === r.productId);
+      if (!p) {
+        show(
+          "Produit résolu en ligne mais absent du catalogue local : synchronisez d'abord.",
+          "error",
+        );
+        return true; // code « traité » : pas de double alerte
+      }
+      let unitOverride: {
+        id: string;
+        symbol: string;
+        baseValue: number;
+      } | null = null;
+      if (r.matched === "alias" && r.unitId && !p.requires_serial) {
+        const known = unitById.get(r.unitId);
+        unitOverride = known
+          ? { id: known.id, symbol: known.symbol, baseValue: known.base_value }
+          : {
+              id: r.unitId,
+              symbol: r.unitSymbol ?? "—",
+              baseValue: round2(r.unitFactor * (p.unit_base_value ?? 1)),
+            };
+      }
+      addToCart(r.productId, r.variantId, unitOverride);
+      return true;
+    } catch {
+      return false; // 404 BARCODE_UNKNOWN ou réseau coupé entre-temps
     }
-    return false;
   };
 
   // Recherche « douchette » : un code-barres exact valide ajoute directement au panier
@@ -309,17 +392,25 @@ export default function PosPage() {
     if (filtered.length === 1) {
       pickProduct(filtered[0]!.id);
       setSearch("");
+      return;
     }
+    // Inconnu localement : tente le résolveur serveur (C3) si connecté.
+    void addByBarcodeOnline(term).then((ok) => {
+      if (ok) setSearch("");
+    });
   };
 
   // Résultat du scanner caméra : même comportement que la douchette.
   const onCameraDetect = (code: string) => {
     setScanOpen(false);
-    if (!addByBarcode(code)) {
-      show(`Aucun produit ne correspond au code « ${code} ».`, "error");
+    if (addByBarcode(code)) {
+      show("Produit ajouté au panier.", "success");
       return;
     }
-    show("Produit ajouté au panier.", "success");
+    void addByBarcodeOnline(code).then((ok) => {
+      if (ok) show("Produit ajouté au panier.", "success");
+      else show(`Aucun produit ne correspond au code « ${code} ».`, "error");
+    });
   };
 
   /* ------------------------------- Validation ------------------------------ */

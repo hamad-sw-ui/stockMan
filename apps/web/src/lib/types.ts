@@ -164,6 +164,17 @@ export interface PosCustomer {
   credit_limit: number;
 }
 
+/** C3 — alias de code-barres chargé dans le bootstrap (résolution au scan,
+ *  hors-ligne incluse ; plafond serveur 5 000, sinon lookup en ligne). */
+export interface PosBarcodeAlias {
+  code: string;
+  product_id: string;
+  variant_id: string | null;
+  unit_id: string | null;
+  unit_base_value: number | null;
+  unit_symbol: string | null;
+}
+
 export interface PosBootstrap {
   serverTime: string;
   depotId: string;
@@ -173,6 +184,9 @@ export interface PosBootstrap {
   categories: Array<{ id: string; name: string }>;
   favorites: string[];
   customers?: PosCustomer[]; // carnet de dettes sélectionnable hors-ligne (E3)
+  barcodes?: PosBarcodeAlias[]; // C3 — alias multi-codes
+  /** false = registre > 5 000 alias : la caisse consulte l'API à la volée. */
+  barcodesComplete?: boolean;
 }
 
 export interface SaleListItem {

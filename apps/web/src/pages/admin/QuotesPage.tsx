@@ -24,6 +24,8 @@ import {
 } from "../../lib/format";
 import { invalidateQueries, useQuery } from "../../lib/query";
 import { useToast } from "../../store/toast";
+import { ScanField } from "../../components/ScanField";
+import type { BarcodeLookupResult } from "../../lib/scanLookup";
 import type {
   Customer,
   Depot,
@@ -46,6 +48,9 @@ const STATUS: Record<
 
 interface LineDraft {
   productId: string;
+  /** C3 — variante résolue au scan (libellé conservé pour l'affichage). */
+  variantId?: string | null;
+  variantName?: string | null;
   unitId: string;
   quantity: string;
   discountPct: string;
@@ -249,8 +254,37 @@ function QuoteCreateModal({
   const [note, setNote] = useState("");
   const [validUntil, setValidUntil] = useState("");
   const [lines, setLines] = useState<LineDraft[]>([
-    { productId: "", unitId: "", quantity: "1", discountPct: "" },
+    {
+      productId: "",
+      variantId: null,
+      variantName: null,
+      unitId: "",
+      quantity: "1",
+      discountPct: "",
+    },
   ]);
+
+  /** C3 — ligne alimentée au scan (alias/carton/variante résolus). */
+  const addScanned = (r: BarcodeLookupResult) => {
+    setLines((prev) => {
+      const draft: LineDraft = {
+        productId: r.productId,
+        variantId: r.variantId,
+        variantName: r.variantName,
+        unitId: r.unitId ?? "",
+        quantity: "1",
+        discountPct: "",
+      };
+      const free = prev.findIndex((l) => !l.productId);
+      if (free >= 0) return prev.map((l, j) => (j === free ? draft : l));
+      return [...prev, draft];
+    });
+    if (r.unitFactor !== 1)
+      show(
+        `Conditionnement « ${r.unitSymbol} » appliqué (×${r.unitFactor}).`,
+        "info",
+      );
+  };
 
   const depots = useQuery<Depot[]>("depots:list", "/depots");
   const customers = useQuery<Paged<Customer>>(
@@ -297,6 +331,7 @@ function QuoteCreateModal({
         validUntil: validUntil || null,
         items: lines.map((l) => ({
           productId: l.productId,
+          variantId: l.variantId || null,
           unitId: l.unitId || null,
           quantity: Number(l.quantity),
           discountPct: Number(l.discountPct) || 0,
@@ -363,6 +398,12 @@ function QuoteCreateModal({
       </div>
 
       <h3 style={{ margin: "12px 0 6px" }}>Lignes</h3>
+      <div style={{ marginBottom: 8 }}>
+        <ScanField
+          onResolve={addScanned}
+          placeholder="Scanner un article (alias/carton inclus)…"
+        />
+      </div>
       {lines.map((l, i) => (
         <div
           key={i}
@@ -378,7 +419,13 @@ function QuoteCreateModal({
             <Field label={i === 0 ? "Produit" : ""}>
               <Select
                 value={l.productId}
-                onChange={(e) => setLine(i, { productId: e.target.value })}
+                onChange={(e) =>
+                  setLine(i, {
+                    productId: e.target.value,
+                    variantId: null,
+                    variantName: null,
+                  })
+                }
               >
                 <option value="">Choisir…</option>
                 {(products.data?.data ?? []).map((p) => (
@@ -387,6 +434,14 @@ function QuoteCreateModal({
                   </option>
                 ))}
               </Select>
+              {l.variantName ? (
+                <span
+                  className="muted"
+                  style={{ fontSize: 12, marginTop: 2, display: "block" }}
+                >
+                  ↳ variante : {l.variantName}
+                </span>
+              ) : null}
             </Field>
           </div>
           <Field label={i === 0 ? "Unité" : ""}>

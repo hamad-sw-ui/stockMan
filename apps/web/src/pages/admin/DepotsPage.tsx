@@ -1,5 +1,8 @@
 /** Dépôts & transferts : CRUD des emplacements, vue stock par dépôt et
- *  transferts inter-dépôts (création, réception, annulation). */
+ *  transferts inter-dépôts (création, réception, annulation).
+ *  C3 — création ET réception au scan (alias/cartons résolus, facteur
+ *  matérialisé dans la quantité — les lignes de transfert sont en unités de
+ *  base, sans unité portée). */
 import { useEffect, useState } from "react";
 import {
   Badge,
@@ -28,6 +31,8 @@ import type {
   TransitRow,
   VendorRow,
 } from "../../lib/types";
+import { ScanField } from "../../components/ScanField";
+import type { BarcodeLookupResult } from "../../lib/scanLookup";
 
 /* ------------------------------- Onglet Dépôts ------------------------------ */
 function DepotsTab() {
@@ -330,7 +335,12 @@ function TransfersTab() {
     fromDepotId: string;
     toDepotId: string;
     note: string;
-    items: Array<{ productId: string; quantity: string }>;
+    items: Array<{
+      productId: string;
+      variantId: string | null;
+      productName: string;
+      quantity: string;
+    }>;
   } | null>(null);
   // E8 — réception PARTIELLE par ligne (écarts DAMAGE/LOSS avec motif).
   const [receive, setReceive] = useState<TransferRow | null>(null);
@@ -361,6 +371,7 @@ function TransfersTab() {
       .filter((i) => i.productId && Number(i.quantity.replace(",", ".")) > 0)
       .map((i) => ({
         productId: i.productId,
+        variantId: i.variantId ?? undefined,
         quantity: Number(i.quantity.replace(",", ".")),
       }));
     if (items.length === 0) {
@@ -428,7 +439,7 @@ function TransfersTab() {
               fromDepotId: depots.data?.[0]?.id ?? "",
               toDepotId: depots.data?.[1]?.id ?? "",
               note: "",
-              items: [{ productId: "", quantity: "1" }],
+              items: [],
             })
           }
           disabled={(depots.data ?? []).filter((d) => d.is_active).length < 2}
@@ -631,7 +642,45 @@ function TransfersTab() {
           ) : null}
 
           <h3 style={{ margin: "10px 0" }}>Lignes</h3>
-          <Field label="Ajouter un produit (recherche)">
+          <Field label="Scanner un article (douchette ou caméra)">
+            <ScanField
+              onResolve={(r: BarcodeLookupResult) => {
+                if (
+                  !form.items.some(
+                    (i) =>
+                      i.productId === r.productId &&
+                      (i.variantId ?? null) === r.variantId,
+                  )
+                ) {
+                  setForm({
+                    ...form,
+                    items: [
+                      ...form.items,
+                      {
+                        productId: r.productId,
+                        variantId: r.variantId,
+                        productName:
+                          r.productName +
+                          (r.variantName ? ` · ${r.variantName}` : ""),
+                        // Lignes en unités de base : le facteur du carton
+                        // scanné est matérialisé dans la quantité (×12).
+                        quantity: String(r.unitFactor !== 1 ? r.unitFactor : 1),
+                      },
+                    ],
+                  });
+                  if (r.unitFactor !== 1)
+                    show(
+                      `Conditionnement « ${r.unitSymbol} » : quantité pré-remplie ×${r.unitFactor}.`,
+                      "info",
+                    );
+                } else {
+                  show("Cette ligne est déjà dans le transfert.", "info");
+                }
+              }}
+              placeholder="Code produit, alias fournisseur ou carton…"
+            />
+          </Field>
+          <Field label="ou rechercher par nom">
             <Input
               value={productQuery}
               onChange={(e) => searchProducts(e.target.value)}
@@ -648,12 +697,21 @@ function TransfersTab() {
                   key={p.id}
                   type="button"
                   onClick={() => {
-                    if (!form.items.some((i) => i.productId === p.id))
+                    if (
+                      !form.items.some(
+                        (i) => i.productId === p.id && !i.variantId,
+                      )
+                    )
                       setForm({
                         ...form,
                         items: [
                           ...form.items,
-                          { productId: p.id, quantity: "1" },
+                          {
+                            productId: p.id,
+                            variantId: null,
+                            productName: p.name,
+                            quantity: "1",
+                          },
                         ],
                       });
                     setProductQuery("");
@@ -684,15 +742,8 @@ function TransfersTab() {
                 {form.items
                   .filter((i) => i.productId)
                   .map((i, idx) => (
-                    <tr key={i.productId}>
-                      <td>
-                        {productResults.find((p) => p.id === i.productId)
-                          ?.name ?? (
-                          <code className="muted">
-                            {i.productId.slice(0, 8)}…
-                          </code>
-                        )}
-                      </td>
+                    <tr key={`${i.productId}:${i.variantId ?? ""}`}>
+                      <td>{i.productName}</td>
                       <td className="num" style={{ maxWidth: 100 }}>
                         <Input
                           inputMode="decimal"
@@ -701,7 +752,8 @@ function TransfersTab() {
                             setForm({
                               ...form,
                               items: form.items.map((x) =>
-                                x.productId === i.productId
+                                x.productId === i.productId &&
+                                (x.variantId ?? null) === (i.variantId ?? null)
                                   ? { ...x, quantity: e.target.value }
                                   : x,
                               ),
@@ -906,6 +958,43 @@ function ReceiveModal({
         </EmptyState>
       ) : (
         <>
+          {/* C3 — réception au scan : chaque code scanné incrémente la
+              colonne « Reçu » de la ligne correspondante (plafonné au
+              reliquat ; le facteur du conditionnement est appliqué). */}
+          <Field label="Scanner l'article reçu">
+            <ScanField
+              onResolve={(r: BarcodeLookupResult) => {
+                const line = lines.find((l) =>
+                  r.variantId
+                    ? l.productId === r.productId &&
+                      l.variantName === r.variantName
+                    : l.productId === r.productId,
+                );
+                if (!line) {
+                  show(
+                    `« ${r.productName} » ne figure pas dans le reliquat de ce transfert.`,
+                    "error",
+                  );
+                  return;
+                }
+                const cur = rows[line.itemId] ?? {
+                  recv: String(line.inTransit),
+                  lost: "0",
+                  reason: "" as const,
+                };
+                const bump = r.unitFactor !== 1 ? r.unitFactor : 1;
+                const recv = Math.min(
+                  line.inTransit,
+                  (Number(cur.recv.replace(",", ".")) || 0) + bump,
+                );
+                setRows({
+                  ...rows,
+                  [line.itemId]: { ...cur, recv: String(recv) },
+                });
+              }}
+              placeholder="Scannez : la colonne « Reçu » s'incrémente…"
+            />
+          </Field>
           <div className="table-wrap">
             <table>
               <thead>

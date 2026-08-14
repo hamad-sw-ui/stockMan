@@ -30,6 +30,8 @@ import {
 } from "../../lib/format";
 import { invalidateQueries, useQuery } from "../../lib/query";
 import { useToast } from "../../store/toast";
+import { ScanField } from "../../components/ScanField";
+import type { BarcodeLookupResult } from "../../lib/scanLookup";
 import type {
   AbcScheduleRow,
   CampaignDetail,
@@ -602,6 +604,32 @@ function CampaignDetailModal({
         />
       </div>
 
+      {counting ? (
+        /* C3 — comptage au scan : chaque code lu CUMULE la quantité comptée
+           de la ligne (×facteur du conditionnement scanné). */
+        <ScanField
+          onResolve={(r: BarcodeLookupResult) => {
+            const item = detail.items.find(
+              (it) => it.product_id === r.productId,
+            );
+            if (!item) {
+              show(
+                `« ${r.productName} » n'est pas dans le périmètre de cette campagne.`,
+                "error",
+              );
+              return;
+            }
+            const bump = r.unitFactor !== 1 ? r.unitFactor : 1;
+            const rawCur = counts[item.product_id];
+            const cur =
+              rawCur !== undefined
+                ? Number(rawCur.replace(",", ".")) || 0
+                : (item.counted_qty ?? 0);
+            setCounts({ ...counts, [item.product_id]: String(cur + bump) });
+          }}
+          placeholder="Scannez les articles comptés (cumul automatique)…"
+        />
+      ) : null}
       <div className="table-wrap" style={{ maxHeight: 420, overflow: "auto" }}>
         <table>
           <thead>

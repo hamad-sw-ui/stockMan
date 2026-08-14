@@ -28,6 +28,8 @@ import {
 } from "../../lib/format";
 import { invalidateQueries, useQuery } from "../../lib/query";
 import { useToast } from "../../store/toast";
+import { ScanField } from "../../components/ScanField";
+import type { BarcodeLookupResult } from "../../lib/scanLookup";
 import type {
   Batch,
   Depot,
@@ -359,14 +361,42 @@ function PoCreateModal({
   const [reference, setReference] = useState("");
   const [note, setNote] = useState("");
   const [lines, setLines] = useState<
-    Array<{ productId: string; quantity: string; unitCost: string }>
+    Array<{
+      productId: string;
+      /** C3 — variante scannée (les commandes sont en unités de base). */
+      variantId: string | null;
+      quantity: string;
+      unitCost: string;
+    }>
   >([
     {
       productId: presetProduct,
+      variantId: null,
       quantity: presetQty || "1",
       unitCost: "",
     },
   ]);
+
+  /** C3 — ligne alimentée au scan ; le facteur du conditionnement est
+   *  matérialisé dans la quantité (les commandes sont en unités de base). */
+  const addScanned = (r: BarcodeLookupResult) => {
+    setLines((prev) => {
+      const draft = {
+        productId: r.productId,
+        variantId: r.variantId,
+        quantity: String(r.unitFactor !== 1 ? r.unitFactor : 1),
+        unitCost: "",
+      };
+      const free = prev.findIndex((l) => !l.productId);
+      if (free >= 0) return prev.map((l, j) => (j === free ? draft : l));
+      return [...prev, draft];
+    });
+    if (r.unitFactor !== 1)
+      show(
+        `Conditionnement « ${r.unitSymbol} » : quantité pré-remplie ×${r.unitFactor}.`,
+        "info",
+      );
+  };
 
   const suppliers = useQuery<Supplier[]>("suppliers:list", "/suppliers");
   const depots = useQuery<Depot[]>("depots:list", "/depots");
@@ -401,7 +431,12 @@ function PoCreateModal({
 
   const setLine = (
     i: number,
-    patch: Partial<{ productId: string; quantity: string; unitCost: string }>,
+    patch: Partial<{
+      productId: string;
+      variantId: string | null;
+      quantity: string;
+      unitCost: string;
+    }>,
   ) =>
     setLines((prev) => prev.map((l, j) => (j === i ? { ...l, ...patch } : l)));
 
@@ -416,6 +451,7 @@ function PoCreateModal({
         note: note.trim() || null,
         items: lines.map((l) => ({
           productId: l.productId,
+          variantId: l.variantId ?? null,
           quantity: Number(l.quantity),
           unitCost: l.unitCost
             ? Number(l.unitCost)
@@ -504,6 +540,12 @@ function PoCreateModal({
       <h3 style={{ margin: "12px 0 6px" }}>
         Lignes (quantités en unités de base)
       </h3>
+      <div style={{ marginBottom: 8 }}>
+        <ScanField
+          onResolve={addScanned}
+          placeholder="Scanner l'article commandé (alias/carton inclus)…"
+        />
+      </div>
       {lines.map((l, i) => (
         <div
           key={i}
@@ -575,7 +617,7 @@ function PoCreateModal({
           onClick={() =>
             setLines((prev) => [
               ...prev,
-              { productId: "", quantity: "1", unitCost: "" },
+              { productId: "", variantId: null, quantity: "1", unitCost: "" },
             ])
           }
         >
@@ -1218,6 +1260,30 @@ function ReturnCreateModal({
       </div>
 
       <h3 style={{ margin: "12px 0 6px" }}>Marchandises renvoyées</h3>
+      {/* C3 — le scan fixe le produit et charge ses lots ; le facteur du
+          conditionnement se matérialise dans la quantité (unités de base). */}
+      <div style={{ marginBottom: 8 }}>
+        <ScanField
+          onResolve={(r: BarcodeLookupResult) => {
+            setLines((prev) => {
+              const free = prev.findIndex((l) => !l.productId);
+              if (free < 0) return prev;
+              return prev.map((l, j) =>
+                j === free
+                  ? {
+                      ...l,
+                      productId: r.productId,
+                      batchId: "",
+                      quantity: String(r.unitFactor !== 1 ? r.unitFactor : 1),
+                    }
+                  : l,
+              );
+            });
+            void loadBatches(r.productId);
+          }}
+          placeholder="Scanner l'article à renvoyer…"
+        />
+      </div>
       {lines.map((l, i) => (
         <div
           key={i}

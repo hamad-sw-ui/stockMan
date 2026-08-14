@@ -1,6 +1,8 @@
 /** Réceptions fournisseurs : enregistrement des entrées de stock (transaction
- *  atomique) avec lots et péremptions, liste paginée et détail. */
-import { useState } from "react";
+ *  atomique) avec lots et péremptions, liste paginée et détail.
+ *  C3 — ajout de lignes AU SCAN (alias et cartons ×N résolus) ; C7 — grille
+ *  IMEI par ligne pour les produits sérialisés (scan Code 128 ou saisie). */
+import { Fragment, useState } from "react";
 import {
   Button,
   Card,
@@ -31,6 +33,12 @@ import type {
   Supplier,
   Unit,
 } from "../../lib/types";
+import { ScanField } from "../../components/ScanField";
+import {
+  CameraScanner,
+  cameraScanSupported,
+} from "../../components/CameraScanner";
+import type { BarcodeLookupResult } from "../../lib/scanLookup";
 
 interface LineForm {
   productId: string;
@@ -40,6 +48,11 @@ interface LineForm {
   unitCost: string;
   batchNumber: string;
   expiryDate: string;
+  variantId: string | null;
+  variantName: string | null;
+  /** C7 — produit sérialisé : un numéro (IMEI) par unité reçue. */
+  requiresSerial: boolean;
+  serials: string[];
 }
 
 export default function ReceiptsPage() {
@@ -112,7 +125,7 @@ export default function ReceiptsPage() {
   };
 
   const addProduct = (p: ProductListItem) => {
-    if (!lines.some((l) => l.productId === p.id)) {
+    if (!lines.some((l) => l.productId === p.id && !l.variantId)) {
       setLines([
         ...lines,
         {
@@ -123,11 +136,54 @@ export default function ReceiptsPage() {
           unitCost: String(p.purchase_price || 0),
           batchNumber: "",
           expiryDate: "",
+          variantId: null,
+          variantName: null,
+          requiresSerial: p.requires_serial ?? false,
+          serials: [],
         },
       ]);
     }
     setProductQuery("");
     setProductResults([]);
+  };
+
+  /** C3 — ligne ajoutée au scan : alias/conditionnement/variante résolus,
+   *  quantité pré-remplie au facteur du conditionnement scanné. */
+  const addScanned = (r: BarcodeLookupResult) => {
+    const key = (l: LineForm) =>
+      l.productId === r.productId && (l.variantId ?? null) === r.variantId;
+    if (!lines.some(key)) {
+      const serialized = r.requiresSerial;
+      setLines([
+        ...lines,
+        {
+          productId: r.productId,
+          productName: r.productName,
+          quantity: "1",
+          // Sérialisé : unité de base imposée par l'API (un numéro par unité).
+          unitId: !serialized && r.unitFactor !== 1 ? (r.unitId ?? "") : "",
+          unitCost: String(r.purchasePrice || 0),
+          batchNumber: "",
+          expiryDate: "",
+          variantId: r.variantId,
+          variantName: r.variantName,
+          requiresSerial: serialized,
+          serials: [],
+        },
+      ]);
+      if (r.unitId && r.unitFactor !== 1 && !serialized)
+        show(
+          `Conditionnement « ${r.unitSymbol} » : la quantité comptera ×${r.unitFactor}.`,
+          "info",
+        );
+      if (serialized)
+        show(
+          "Produit sérialisé : scannez un numéro (IMEI) par unité reçue.",
+          "info",
+        );
+    } else {
+      show("Cette ligne est déjà dans la réception.", "info");
+    }
   };
 
   const totalCost = lines.reduce(
@@ -142,15 +198,27 @@ export default function ReceiptsPage() {
     const items = lines
       .map((l) => ({
         productId: l.productId,
+        variantId: l.variantId ?? undefined,
         quantity: Number(l.quantity.replace(",", ".")) || 0,
         unitId: l.unitId || undefined,
         unitCost: Number(l.unitCost.replace(",", ".")) || 0,
         batchNumber: l.batchNumber || undefined,
         expiryDate: l.expiryDate || null,
+        serials: l.requiresSerial ? l.serials : undefined,
       }))
       .filter((l) => l.quantity > 0);
     if (items.length === 0) {
       show("Ajoutez au moins une ligne avec une quantité.", "error");
+      return;
+    }
+    if (serialMismatch) {
+      const expected = Math.round(
+        Number(serialMismatch.quantity.replace(",", ".")) || 0,
+      );
+      show(
+        `« ${serialMismatch.productName} » : ${expected} numéro(s) de série attendu(s), ${serialMismatch.serials.length} saisi(s).`,
+        "error",
+      );
       return;
     }
     setBusy(true);
@@ -237,6 +305,17 @@ export default function ReceiptsPage() {
 
   const setLine = (i: number, k: keyof LineForm, v: string) =>
     setLines(lines.map((l, j) => (j === i ? { ...l, [k]: v } : l)));
+
+  const setLineSerials = (i: number, serials: string[]) =>
+    setLines(lines.map((l, j) => (j === i ? { ...l, serials } : l)));
+
+  /** Cohérence IMEI avant envoi : autant de numéros que d'unités reçues. */
+  const serialMismatch = lines.find(
+    (l) =>
+      l.requiresSerial &&
+      l.serials.length !==
+        Math.round(Number(l.quantity.replace(",", ".")) || 0),
+  );
 
   return (
     <div className="wrap">
@@ -404,7 +483,13 @@ export default function ReceiptsPage() {
           </div>
 
           <h3 style={{ margin: "10px 0" }}>Produits reçus</h3>
-          <Field label="Ajouter un produit">
+          <Field label="Scanner un article (douchette ou caméra)">
+            <ScanField
+              onResolve={addScanned}
+              placeholder="Code produit, alias fournisseur ou carton…"
+            />
+          </Field>
+          <Field label="ou rechercher par nom">
             <Input
               value={productQuery}
               onChange={(e) => searchProducts(e.target.value)}
@@ -445,69 +530,104 @@ export default function ReceiptsPage() {
                 </thead>
                 <tbody>
                   {lines.map((l, i) => (
-                    <tr key={l.productId}>
-                      <td style={{ fontWeight: 600 }}>{l.productName}</td>
-                      <td style={{ maxWidth: 90 }}>
-                        <Input
-                          inputMode="decimal"
-                          value={l.quantity}
-                          onChange={(e) =>
-                            setLine(i, "quantity", e.target.value)
-                          }
-                        />
-                      </td>
-                      <td style={{ maxWidth: 110 }}>
-                        <Select
-                          value={l.unitId}
-                          onChange={(e) => setLine(i, "unitId", e.target.value)}
-                        >
-                          <option value="">Produit</option>
-                          {(units.data ?? []).map((u) => (
-                            <option key={u.id} value={u.id}>
-                              {u.symbol}
-                              {u.base_value !== 1 ? ` ×${u.base_value}` : ""}
-                            </option>
-                          ))}
-                        </Select>
-                      </td>
-                      <td style={{ maxWidth: 110 }}>
-                        <Input
-                          inputMode="decimal"
-                          value={l.unitCost}
-                          onChange={(e) =>
-                            setLine(i, "unitCost", e.target.value)
-                          }
-                        />
-                      </td>
-                      <td style={{ maxWidth: 110 }}>
-                        <Input
-                          value={l.batchNumber}
-                          onChange={(e) =>
-                            setLine(i, "batchNumber", e.target.value)
-                          }
-                        />
-                      </td>
-                      <td>
-                        <Input
-                          type="date"
-                          value={l.expiryDate}
-                          onChange={(e) =>
-                            setLine(i, "expiryDate", e.target.value)
-                          }
-                        />
-                      </td>
-                      <td>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() =>
-                            setLines(lines.filter((_, j) => j !== i))
-                          }
-                        >
-                          🗑️
-                        </Button>
-                      </td>
-                    </tr>
+                    <Fragment key={`${l.productId}:${l.variantId ?? ""}`}>
+                      <tr>
+                        <td style={{ fontWeight: 600 }}>
+                          {l.productName}
+                          {l.variantName ? (
+                            <span className="muted"> · {l.variantName}</span>
+                          ) : null}
+                          {l.requiresSerial ? (
+                            <span
+                              title="Produit sérialisé : un numéro par unité"
+                              style={{
+                                marginLeft: 6,
+                                fontSize: 11,
+                                color: "#b45309",
+                              }}
+                            >
+                              ⚡ série
+                            </span>
+                          ) : null}
+                        </td>
+                        <td style={{ maxWidth: 90 }}>
+                          <Input
+                            inputMode="decimal"
+                            value={l.quantity}
+                            onChange={(e) =>
+                              setLine(i, "quantity", e.target.value)
+                            }
+                          />
+                        </td>
+                        <td style={{ maxWidth: 110 }}>
+                          <Select
+                            value={l.unitId}
+                            onChange={(e) =>
+                              setLine(i, "unitId", e.target.value)
+                            }
+                            disabled={l.requiresSerial}
+                          >
+                            <option value="">Produit</option>
+                            {(units.data ?? []).map((u) => (
+                              <option key={u.id} value={u.id}>
+                                {u.symbol}
+                                {u.base_value !== 1 ? ` ×${u.base_value}` : ""}
+                              </option>
+                            ))}
+                          </Select>
+                        </td>
+                        <td style={{ maxWidth: 110 }}>
+                          <Input
+                            inputMode="decimal"
+                            value={l.unitCost}
+                            onChange={(e) =>
+                              setLine(i, "unitCost", e.target.value)
+                            }
+                          />
+                        </td>
+                        <td style={{ maxWidth: 110 }}>
+                          <Input
+                            value={l.batchNumber}
+                            onChange={(e) =>
+                              setLine(i, "batchNumber", e.target.value)
+                            }
+                          />
+                        </td>
+                        <td>
+                          <Input
+                            type="date"
+                            value={l.expiryDate}
+                            onChange={(e) =>
+                              setLine(i, "expiryDate", e.target.value)
+                            }
+                          />
+                        </td>
+                        <td>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() =>
+                              setLines(lines.filter((_, j) => j !== i))
+                            }
+                          >
+                            🗑️
+                          </Button>
+                        </td>
+                      </tr>
+                      {l.requiresSerial ? (
+                        <tr>
+                          <td colSpan={7} style={{ background: "#fffbeb" }}>
+                            <SerialLineEditor
+                              serials={l.serials}
+                              expected={Math.round(
+                                Number(l.quantity.replace(",", ".")) || 0,
+                              )}
+                              onChange={(next) => setLineSerials(i, next)}
+                            />
+                          </td>
+                        </tr>
+                      ) : null}
+                    </Fragment>
                   ))}
                 </tbody>
               </table>
@@ -715,6 +835,159 @@ export default function ReceiptsPage() {
             Total : {formatMoney(detail.total_cost)}
           </p>
         </Modal>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * C7 — Grille IMEI / numéros de série d'une ligne de réception (fix : l'API
+ * exigeait les numéros des produits sérialisés mais aucun écran ne permettait
+ * de les saisir — la réception des téléphones était BLOQUÉE côté UI).
+ * Saisie clavier/douchette (Entrée) ou caméra (Code 128) ; anti-doublon
+ * local, compteur « saisis / attendus » piloté par la quantité de la ligne.
+ */
+function SerialLineEditor({
+  serials,
+  expected,
+  onChange,
+}: {
+  serials: string[];
+  expected: number;
+  onChange: (next: string[]) => void;
+}) {
+  const [draft, setDraft] = useState("");
+  const [cam, setCam] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const addSerial = (raw: string) => {
+    const s = raw.trim();
+    if (!s) return;
+    if (s.length > 100) {
+      setError("Numéro trop long (100 max).");
+      return;
+    }
+    if (serials.some((x) => x.toLowerCase() === s.toLowerCase())) {
+      setError(`« ${s} » est déjà dans la liste.`);
+      return;
+    }
+    setError(null);
+    setDraft("");
+    onChange([...serials, s]);
+  };
+
+  const ok = serials.length === expected && expected > 0;
+  return (
+    <div>
+      <div className="row" style={{ gap: 6, alignItems: "center" }}>
+        <input
+          className="input"
+          style={{ flex: 1, minWidth: 180 }}
+          value={draft}
+          onChange={(e) => {
+            setDraft(e.target.value);
+            setError(null);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              addSerial(draft);
+            }
+          }}
+          placeholder="Scanner / saisir un IMEI ou n° de série, puis Entrée…"
+          aria-label="Numéro de série"
+        />
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => addSerial(draft)}
+          disabled={!draft.trim()}
+        >
+          ➕ Ajouter
+        </Button>
+        {cameraScanSupported() ? (
+          <Button variant="outline" size="sm" onClick={() => setCam((c) => !c)}>
+            📷
+          </Button>
+        ) : null}
+        <span
+          role="status"
+          aria-live="polite"
+          style={{
+            fontWeight: 700,
+            fontSize: 13,
+            color: ok ? "#047857" : "#b45309",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {serials.length}/{expected} numéro(s)
+        </span>
+      </div>
+      {error ? (
+        <p
+          role="alert"
+          style={{ margin: "4px 0 0", fontSize: 12, color: "#b91c1c" }}
+        >
+          {error}
+        </p>
+      ) : null}
+      {!ok ? (
+        <p className="muted" style={{ margin: "4px 0 0", fontSize: 12 }}>
+          Un numéro unique par unité reçue — ajustez la quantité ou complétez la
+          liste.
+        </p>
+      ) : null}
+      {serials.length > 0 ? (
+        <div
+          style={{
+            display: "flex",
+            flexWrap: "wrap",
+            gap: 4,
+            marginTop: 6,
+          }}
+        >
+          {serials.map((s) => (
+            <span
+              key={s}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 4,
+                padding: "2px 8px",
+                background: "#fff",
+                border: "1px solid #fcd34d",
+                borderRadius: 999,
+                fontSize: 12,
+                fontFamily: "monospace",
+              }}
+            >
+              {s}
+              <button
+                type="button"
+                aria-label={`Retirer ${s}`}
+                style={{
+                  border: "none",
+                  background: "transparent",
+                  cursor: "pointer",
+                  color: "#b91c1c",
+                  fontWeight: 700,
+                }}
+                onClick={() => onChange(serials.filter((x) => x !== s))}
+              >
+                ×
+              </button>
+            </span>
+          ))}
+        </div>
+      ) : null}
+      {cam ? (
+        <CameraScanner
+          onDetect={(code) => {
+            setCam(false);
+            addSerial(code);
+          }}
+          onClose={() => setCam(false)}
+        />
       ) : null}
     </div>
   );

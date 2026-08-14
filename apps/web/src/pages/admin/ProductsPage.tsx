@@ -16,6 +16,7 @@ import {
   Spinner,
 } from "../../components/ui";
 import { download, upload } from "../../lib/http";
+import { ScanField } from "../../components/ScanField";
 import { formatMoney, formatQty, stockStatusLabel } from "../../lib/format";
 import { invalidateQueries, useQuery } from "../../lib/query";
 import { useToast } from "../../store/toast";
@@ -156,13 +157,24 @@ export default function ProductsPage() {
       />
 
       <Card className="filters">
-        <div className="row" style={{ flexWrap: "wrap" }}>
+        {/* C3 — scan direct (alias inclus) : ouvre la fiche du produit résolu. */}
+        <div
+          className="row"
+          style={{ flexWrap: "wrap", alignItems: "flex-end" }}
+        >
           <SearchInput
             value={search}
             onChange={setSearch}
             placeholder="Nom, code-barres ou catégorie…"
             autoFocus
           />
+          <div style={{ maxWidth: 320 }}>
+            <ScanField
+              label="Aller à la fiche au scan"
+              placeholder="Code produit ou alias…"
+              onResolve={(r) => navigate(`/admin/produits/${r.productId}`)}
+            />
+          </div>
           <Select
             value={categoryId}
             onChange={(e) => setParam("categoryId", e.target.value)}

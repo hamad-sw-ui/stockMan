@@ -28,6 +28,7 @@ router.get(
       categories,
       favorites,
       customers,
+      aliases,
     ] = await Promise.all([
       query(
         `SELECT p.id, p.name, p.barcode, p.selling_price::float, p.purchase_price::float,
@@ -73,6 +74,22 @@ router.get(
              FROM customers WHERE tenant_id=$1 AND is_active ORDER BY name LIMIT 500`,
         [u.tenantId],
       ),
+      // C3 — registre d'alias (codes fournisseurs + conditionnements) pour la
+      // résolution multi-codes AU SCAN, hors-ligne comprise. Plafond 5 000 :
+      // au-delà, le drapeau barcodesComplete=false invite la caisse à faire
+      // le lookup en ligne (GET /api/products/lookup/:code) à la volée.
+      // 5 001 lignes lues pour détecter le dépassement.
+      query(
+        `SELECT pb.code, pb.product_id, pb.variant_id, pb.unit_id,
+                un.base_value::float AS unit_base_value, un.symbol AS unit_symbol
+           FROM product_barcodes pb
+           JOIN products p ON p.id = pb.product_id AND p.archived_at IS NULL
+           LEFT JOIN units un ON un.id = pb.unit_id
+          WHERE pb.tenant_id=$1
+          ORDER BY pb.created_at DESC
+          LIMIT 5001`,
+        [u.tenantId],
+      ),
     ]);
 
     // Jointure effectuée côté application (évite json_agg, portable)
@@ -112,6 +129,8 @@ router.get(
       categories: categories.rows,
       favorites: favorites.rows.map((f) => f.product_id),
       customers: customers.rows,
+      barcodes: aliases.rows.slice(0, 5000),
+      barcodesComplete: aliases.rows.length <= 5000,
     });
   }),
 );
