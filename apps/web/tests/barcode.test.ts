@@ -6,11 +6,16 @@ import {
   canEncodeCode39,
   code39Bars,
   code39Widths,
+  detectBarcodeSymbology,
   ean13Bars,
   ean13Bits,
   ean13Checksum,
+  ean8Checksum,
   isValidEan13,
+  isValidEan8,
+  isValidUpca,
   normalizeCode39,
+  upcaChecksum,
 } from "../src/lib/barcode";
 
 // Largeurs attendues d'un motif donné (n=1, w=3), barre en position paire.
@@ -138,5 +143,48 @@ describe("EAN-13 (GS1)", () => {
     }
     expect(right).toBeLessThanOrEqual(95);
     expect(() => ean13Bars("6100000000011")).toThrow(); // contrôle faux
+  });
+});
+
+/** C2 — détection de symbologie à la saisie (badge d'aide fiche produit) :
+ *  parité stricte avec le validateur serveur (apps/api/src/lib/barcode.ts). */
+describe("detectBarcodeSymbology + checksums EAN-8 / UPC-A", () => {
+  it("EAN-8 : checksum 96385074 valide (4), 96385071 refusé", () => {
+    expect(ean8Checksum("9638507")).toBe(4);
+    expect(isValidEan8("96385074")).toBe(true);
+    expect(isValidEan8("96385071")).toBe(false);
+    expect(isValidEan8("12345678")).toBe(false);
+  });
+
+  it("UPC-A : checksum classique 036000291452 (2), 012345678905 (5)", () => {
+    expect(upcaChecksum("03600029145")).toBe(2);
+    expect(isValidUpca("036000291452")).toBe(true);
+    expect(isValidUpca("012345678905")).toBe(true);
+    expect(isValidUpca("012345678901")).toBe(false);
+  });
+
+  it("détection : EAN-13 ok / ko avec chiffre de contrôle attendu", () => {
+    expect(detectBarcodeSymbology("4006381333931")).toMatchObject({
+      symbology: "EAN13",
+      valid: true,
+    });
+    const bad = detectBarcodeSymbology("4006381333930");
+    expect(bad).toMatchObject({ symbology: "EAN13", valid: false });
+    expect(bad.label).toContain("1 attendu");
+  });
+
+  it("détection : EAN-8, UPC-A, Code 39 (hors tailles numériques), Code 128", () => {
+    expect(detectBarcodeSymbology("96385074").symbology).toBe("EAN8");
+    expect(detectBarcodeSymbology("036000291452").symbology).toBe("UPCA");
+    // 6 chiffres : ni EAN ni UPC → Code 39 (codes courts historiques licites)
+    expect(detectBarcodeSymbology("620000").symbology).toBe("CODE39");
+    expect(detectBarcodeSymbology("LOG-2026-A").symbology).toBe("CODE39");
+    // Accolades : hors alphabet 39 mais ASCII imprimable → Code 128
+    expect(detectBarcodeSymbology("lot{a}").symbology).toBe("CODE128");
+    // Accents : ni 39 ni 128 → rejet franc
+    expect(detectBarcodeSymbology("café").valid).toBe(false);
+    expect(detectBarcodeSymbology("café").symbology).toBeNull();
+    // Vide : rien à afficher
+    expect(detectBarcodeSymbology("  ").label).toBe("");
   });
 });

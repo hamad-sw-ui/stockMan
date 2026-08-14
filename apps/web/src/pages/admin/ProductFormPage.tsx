@@ -12,16 +12,41 @@ import {
   Spinner,
   Textarea,
 } from "../../components/ui";
-import { patch, post } from "../../lib/http";
+import { ApiError, patch, post } from "../../lib/http";
 import { invalidateQueries, useQuery } from "../../lib/query";
 import { useToast } from "../../store/toast";
 import type { Category, Depot, ProductDetail, Unit } from "../../lib/types";
+import { detectBarcodeSymbology } from "../../lib/barcode";
 
 interface VariantForm {
   name: string;
   sku: string;
   barcode: string;
   additionalPrice: string;
+}
+
+/** Badge live de symbologie (EAN-13 ✓ / contrôle attendu…) — aide à la saisie. */
+function SymbologyBadge({ value }: { value: string }) {
+  const b = detectBarcodeSymbology(value);
+  if (!value.trim() || !b.label) return null;
+  return (
+    <span
+      role="status"
+      style={{
+        display: "inline-block",
+        marginTop: 4,
+        padding: "1px 8px",
+        borderRadius: 999,
+        fontSize: 12,
+        fontWeight: 600,
+        background: b.valid ? "#ecfdf5" : "#fef2f2",
+        color: b.valid ? "#047857" : "#b91c1c",
+        border: `1px solid ${b.valid ? "#a7f3d0" : "#fecaca"}`,
+      }}
+    >
+      {b.label}
+    </span>
+  );
 }
 
 export default function ProductFormPage() {
@@ -63,6 +88,32 @@ export default function ProductFormPage() {
     expiryDate: "",
   });
   const [saving, setSaving] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  /** Conflit d'unicité (409 BARCODE_TAKEN) affiché sous le champ avec lien. */
+  const [barcodeConflict, setBarcodeConflict] = useState<{
+    message: string;
+    productId: string | null;
+  } | null>(null);
+
+  /** C2 — tire un EAN-13 interne côté serveur et l'applique au produit. */
+  const generateCode = async () => {
+    if (!id) return;
+    setGenerating(true);
+    try {
+      const r = await post<{ code: string; is_primary: boolean }>(
+        "/products/barcodes/generate",
+        { productId: id },
+      );
+      setF((s) => ({ ...s, barcode: r.code }));
+      setBarcodeConflict(null);
+      invalidateQueries(`product:${id}`);
+      show(`Code interne généré et appliqué : ${r.code}`, "success");
+    } catch (e) {
+      show(e instanceof Error ? e.message : "Génération impossible", "error");
+    } finally {
+      setGenerating(false);
+    }
+  };
 
   useEffect(() => {
     if (isEdit && existing.data) {
@@ -196,6 +247,13 @@ export default function ProductFormPage() {
         navigate(`/admin/produits/${created.id}`);
       }
     } catch (e) {
+      if (e instanceof ApiError && e.code === "BARCODE_TAKEN") {
+        const d = (e.details ?? {}) as { productId?: string | null };
+        setBarcodeConflict({
+          message: e.message,
+          productId: d.productId ?? null,
+        });
+      }
       show(
         e instanceof Error ? e.message : "Enregistrement impossible",
         "error",
@@ -259,11 +317,43 @@ export default function ProductFormPage() {
             label="Code-barres"
             hint="Scannable en caisse avec une douchette."
           >
-            <Input
-              value={f.barcode}
-              onChange={(e) => setF({ ...f, barcode: e.target.value })}
-              placeholder="6130000000000"
-            />
+            <div className="row" style={{ gap: 8, alignItems: "center" }}>
+              <div style={{ flex: 1 }}>
+                <Input
+                  value={f.barcode}
+                  onChange={(e) => {
+                    setF({ ...f, barcode: e.target.value });
+                    setBarcodeConflict(null);
+                  }}
+                  placeholder="6130000000000"
+                />
+              </div>
+              {isEdit && !f.barcode.trim() ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={generateCode}
+                  disabled={generating}
+                  title="Générer un code-barres interne (EAN-13 magasin)"
+                >
+                  {generating ? "…" : "🎲 Générer"}
+                </Button>
+              ) : null}
+            </div>
+            <SymbologyBadge value={f.barcode} />
+            {barcodeConflict ? (
+              <p
+                role="alert"
+                style={{ margin: "4px 0 0", color: "#b91c1c", fontSize: 13 }}
+              >
+                {barcodeConflict.message}{" "}
+                {barcodeConflict.productId ? (
+                  <Link to={`/admin/produits/${barcodeConflict.productId}`}>
+                    Voir le produit détenteur →
+                  </Link>
+                ) : null}
+              </p>
+            ) : null}
           </Field>
           <Field
             label="Unité de vente"
@@ -457,6 +547,7 @@ export default function ProductFormPage() {
                         )
                       }
                     />
+                    <SymbologyBadge value={v.barcode} />
                   </Field>
                   <Field label="Supplément (FCFA)">
                     <Input

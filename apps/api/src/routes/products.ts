@@ -18,11 +18,13 @@ import {
 import { increaseLevel, recordMovement } from "../services/stockService";
 import { recordPriceChange } from "../services/pricingService";
 import {
+  drawInternalBarcode,
   dropPrimaryBarcode,
   findBarcodeHolder,
   poolWriter,
   resolveBarcode,
   syncPrimaryBarcode,
+  tenantBarcodePrefix,
   throwBarcodeTaken,
 } from "../services/barcodeService";
 import { detectAndValidateBarcode } from "../lib/barcode";
@@ -159,6 +161,108 @@ router.get(
       unit_factor: r.unitFactor,
       alias: r.matched === "alias",
     });
+  }),
+);
+
+// ---- C2 — génération interne EAN-13 (plage magasin 20–29) ---------------
+// Articles sans code fabricant : tirage séquencé par tenant (jamais deux
+// fois le même code, même en parallèle), re-tirage sur collision, source
+// GENERATED. Cible SANS code → le code généré devient le principal
+// (write-through colonne legacy) ; sinon simple alias.
+const generateInput = z.object({
+  productId: z.string().uuid(),
+  variantId: z.string().uuid().nullish(),
+  /** Présent → alias de conditionnement (jamais principal). */
+  unitId: z.string().uuid().nullish(),
+});
+
+router.post(
+  "/barcodes/generate",
+  ...adminWrite,
+  validateBody(generateInput),
+  h(async (req, res) => {
+    const u = (req as AuthRequest).user;
+    const b = req.body as z.infer<typeof generateInput>;
+    const prefix = await tenantBarcodePrefix(u.tenantId);
+    const created = await withTransaction(async (client) => {
+      const prod = await client.query(
+        "SELECT id, name, barcode FROM products WHERE id=$1 AND tenant_id=$2 AND archived_at IS NULL",
+        [b.productId, u.tenantId],
+      );
+      if (!prod.rows[0]) throw HttpError.notFound("Produit introuvable.");
+      let legacyCode: string | null = prod.rows[0].barcode;
+      let variantName: string | null = null;
+      if (b.variantId) {
+        const v = await client.query(
+          "SELECT id, name, barcode FROM product_variants WHERE id=$1 AND product_id=$2",
+          [b.variantId, b.productId],
+        );
+        if (!v.rows[0])
+          throw HttpError.badRequest(
+            "VARIANT_UNKNOWN",
+            "Cette variante n'appartient pas au produit.",
+          );
+        legacyCode = v.rows[0].barcode;
+        variantName = v.rows[0].name;
+      }
+      if (b.unitId) {
+        const un = await client.query(
+          "SELECT 1 FROM units WHERE id=$1 AND tenant_id=$2",
+          [b.unitId, u.tenantId],
+        );
+        if (!un.rows[0])
+          throw HttpError.badRequest("UNIT_UNKNOWN", "Unité inconnue.");
+      }
+      const asPrimary = !legacyCode && !b.unitId;
+      const code = await drawInternalBarcode(client, u.tenantId, prefix);
+      if (asPrimary) {
+        if (b.variantId)
+          await client.query(
+            "UPDATE product_variants SET barcode=$2, updated_at=now() WHERE id=$1",
+            [b.variantId, code],
+          );
+        else
+          await client.query(
+            "UPDATE products SET barcode=$2, updated_at=now() WHERE id=$1",
+            [b.productId, code],
+          );
+      }
+      const ins = await client.query(
+        `INSERT INTO product_barcodes (tenant_id, product_id, variant_id, unit_id, code, symbology, source, is_primary, created_by)
+         VALUES ($1,$2,$3,$4,$5,'EAN13','GENERATED',$6,$7) RETURNING *`,
+        [
+          u.tenantId,
+          b.productId,
+          b.variantId ?? null,
+          b.unitId ?? null,
+          code,
+          asPrimary,
+          u.id,
+        ],
+      );
+      await writeAudit(
+        {
+          tenantId: u.tenantId,
+          userId: u.id,
+          userName: u.name,
+          action: "CREATE",
+          entity: "product_barcode",
+          entityId: ins.rows[0].id,
+          newState: {
+            code,
+            productId: b.productId,
+            variantName,
+            unitId: b.unitId ?? null,
+            source: "GENERATED",
+            isPrimary: asPrimary,
+          },
+          details: `Code-barres interne généré (préfixe magasin ${prefix}).`,
+        },
+        client,
+      );
+      return ins.rows[0];
+    });
+    res.status(201).json(created);
   }),
 );
 

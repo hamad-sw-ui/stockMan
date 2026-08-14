@@ -15,6 +15,7 @@
 
 import { query } from "../config/db";
 import { HttpError } from "../lib/errors";
+import { ean13ChecksumApi } from "../lib/barcode";
 
 export interface BarcodeResolution {
   matched: "product" | "variant" | "alias";
@@ -371,5 +372,75 @@ export async function dropPrimaryBarcode(
       WHERE tenant_id=$1 AND product_id=$2 AND is_primary
         AND ((variant_id IS NULL AND $3::uuid IS NULL) OR variant_id = $3::uuid)`,
     [args.tenantId, args.productId, args.variantId ?? null],
+  );
+}
+
+// ---------------------------------------------------------------------
+// C2 — Génération interne EAN-13 (plage GS1 « magasin » 20–29)
+// ---------------------------------------------------------------------
+
+/** Préfixe magasin du tenant (config « barcode_internal_prefix », défaut 20). */
+export async function tenantBarcodePrefix(tenantId: string): Promise<string> {
+  const r = await query<{ value: string }>(
+    `SELECT value FROM tenant_configs
+      WHERE tenant_id=$1 AND key='barcode_internal_prefix'`,
+    [tenantId],
+  );
+  const v = (r.rows[0]?.value ?? "20").trim();
+  return /^2[0-9]$/.test(v) ? v : "20";
+}
+
+/** Prochaine valeur de séquence (atomique : ligne verrouillée par l'upsert). */
+async function nextSequenceValue(
+  client: BarcodeWriter,
+  tenantId: string,
+  prefix: string,
+): Promise<number> {
+  const r = await client.query(
+    `INSERT INTO barcode_sequences (tenant_id, prefix, next_value)
+     VALUES ($1,$2,2)
+     ON CONFLICT (tenant_id, prefix)
+     DO UPDATE SET next_value = barcode_sequences.next_value + 1
+     RETURNING next_value`,
+    [tenantId, prefix],
+  );
+  return Number(r.rows[0]!.next_value) - 1; // valeur effectivement consommée
+}
+
+/** Le code PP + 10 chiffres + clé est-il libre PARTOUT pour ce tenant ? */
+async function codeFullyFree(
+  client: BarcodeWriter,
+  tenantId: string,
+  code: string,
+): Promise<boolean> {
+  const tables = [
+    "SELECT 1 FROM product_barcodes WHERE tenant_id=$1 AND code=$2 LIMIT 1",
+    "SELECT 1 FROM products WHERE tenant_id=$1 AND barcode=$2 LIMIT 1",
+    `SELECT 1 FROM product_variants v JOIN products p ON p.id=v.product_id
+      WHERE p.tenant_id=$1 AND v.barcode=$2 LIMIT 1`,
+  ];
+  for (const sql of tables) {
+    const r = await client.query(sql, [tenantId, code]);
+    if (r.rows[0]) return false;
+  }
+  return true;
+}
+
+/** Tire un EAN-13 interne libre : PP + 10 chiffres de séquence + contrôle ;
+ *  re-tirage automatique en cas de collision (données pré-existantes). */
+export async function drawInternalBarcode(
+  client: BarcodeWriter,
+  tenantId: string,
+  prefix: string,
+): Promise<string> {
+  for (let attempt = 0; attempt < 200; attempt += 1) {
+    const n = await nextSequenceValue(client, tenantId, prefix);
+    const body = `${prefix}${String(n).padStart(10, "0")}`; // 12 chiffres
+    const code = `${body}${ean13ChecksumApi(body)}`;
+    if (await codeFullyFree(client, tenantId, code)) return code;
+  }
+  throw HttpError.conflict(
+    "BARCODE_GENERATE_EXHAUSTED",
+    "Tirage impossible : modifiez le préfixe magasin (réglages) puis réessayez.",
   );
 }

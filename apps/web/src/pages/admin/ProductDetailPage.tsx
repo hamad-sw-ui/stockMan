@@ -154,6 +154,25 @@ export default function ProductDetailPage() {
     }
   };
 
+  /** C2 — génère un EAN-13 interne pour la variante (devient son principal). */
+  const generateVariantCode = async (variantId: string) => {
+    setBusy(true);
+    try {
+      const r = await post<{ code: string }>("/products/barcodes/generate", {
+        productId: id,
+        variantId,
+      });
+      show(`Code interne généré : ${r.code}`, "success");
+      if (variantForm?.id === variantId)
+        setVariantForm({ ...variantForm, barcode: r.code });
+      refresh();
+    } catch (e) {
+      show(e instanceof Error ? e.message : "Génération impossible", "error");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const saveVariant = async () => {
     if (!variantForm) return;
     setBusy(true);
@@ -491,7 +510,19 @@ export default function ProductDetailPage() {
                       <td style={{ fontWeight: 600 }}>{v.name}</td>
                       <td className="muted">{v.sku ?? "—"}</td>
                       <td className="muted">
-                        {v.barcode ? <code>{v.barcode}</code> : "—"}
+                        {v.barcode ? (
+                          <code>{v.barcode}</code>
+                        ) : (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            disabled={busy}
+                            title="Générer un code-barres interne (EAN-13 magasin)"
+                            onClick={() => generateVariantCode(v.id)}
+                          >
+                            🎲 Générer
+                          </Button>
+                        )}
                       </td>
                       <td className="num">
                         {v.additional_price

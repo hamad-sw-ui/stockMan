@@ -139,6 +139,103 @@ export function isValidEan13(code: string): boolean {
   return ean13Checksum(code.slice(0, 12)) === Number(code[12]);
 }
 
+/**
+ * EAN-8 / UPC-A — formats courts rencontrés sur petits articles et produits
+ * d'importation nord-américaine (le serveur normalise l'UPC-A en EAN-13).
+ */
+
+/** Chiffre de contrôle EAN-8 (poids 3/1 depuis la gauche sur 7 chiffres). */
+export function ean8Checksum(digits7: string): number {
+  if (!/^\d{7}$/.test(digits7))
+    throw new Error(`EAN-8 : 7 chiffres attendus, reçu « ${digits7} ».`);
+  let sum = 0;
+  for (let i = 0; i < 7; i += 1)
+    sum += Number(digits7[i]) * (i % 2 === 0 ? 3 : 1);
+  return (10 - (sum % 10)) % 10;
+}
+
+/** EAN-8 complet valide ? */
+export function isValidEan8(code: string): boolean {
+  if (!/^\d{8}$/.test(code)) return false;
+  return ean8Checksum(code.slice(0, 7)) === Number(code[7]);
+}
+
+/** Chiffre de contrôle UPC-A (poids 3/1 sur 11 chiffres). */
+export function upcaChecksum(digits11: string): number {
+  if (!/^\d{11}$/.test(digits11))
+    throw new Error(`UPC-A : 11 chiffres attendus, reçu « ${digits11} ».`);
+  let sum = 0;
+  for (let i = 0; i < 11; i += 1)
+    sum += Number(digits11[i]) * (i % 2 === 0 ? 3 : 1);
+  return (10 - (sum % 10)) % 10;
+}
+
+/** UPC-A complet valide ? */
+export function isValidUpca(code: string): boolean {
+  if (!/^\d{12}$/.test(code)) return false;
+  return upcaChecksum(code.slice(0, 11)) === Number(code[11]);
+}
+
+/** ASCII imprimable (Code 128) ? */
+function isPrintableAscii(code: string): boolean {
+  return [...code].every((c) => c >= " " && c <= "~");
+}
+
+export type SymbologyGuess = "EAN13" | "EAN8" | "UPCA" | "CODE39" | "CODE128";
+
+export interface SymbologyBadge {
+  symbology: SymbologyGuess | null;
+  /** checksum GS1 concordant (EAN/UPC) ; toujours vrai pour 39/128. */
+  valid: boolean;
+  /** Libellé court pour badge UI, ex. « EAN-13 ✓ ». */
+  label: string;
+}
+
+/** Détection en saisie (badge d'aide) : symbologie + validité du contrôle. */
+export function detectBarcodeSymbology(raw: string): SymbologyBadge {
+  const code = raw.trim();
+  if (!code) return { symbology: null, valid: false, label: "" };
+  if (/^\d{13}$/.test(code)) {
+    const ok = isValidEan13(code);
+    return {
+      symbology: "EAN13",
+      valid: ok,
+      label: ok
+        ? "EAN-13 ✓"
+        : `EAN-13 ✗ (contrôle ${ean13Checksum(code.slice(0, 12))} attendu)`,
+    };
+  }
+  if (/^\d{12}$/.test(code)) {
+    const ok = isValidUpca(code);
+    return {
+      symbology: "UPCA",
+      valid: ok,
+      label: ok
+        ? "UPC-A ✓"
+        : `UPC-A ✗ (contrôle ${upcaChecksum(code.slice(0, 11))} attendu)`,
+    };
+  }
+  if (/^\d{8}$/.test(code)) {
+    const ok = isValidEan8(code);
+    return {
+      symbology: "EAN8",
+      valid: ok,
+      label: ok
+        ? "EAN-8 ✓"
+        : `EAN-8 ✗ (contrôle ${ean8Checksum(code.slice(0, 7))} attendu)`,
+    };
+  }
+  if (canEncodeCode39(code))
+    return { symbology: "CODE39", valid: true, label: "Code 39" };
+  if (isPrintableAscii(code))
+    return { symbology: "CODE128", valid: true, label: "Code 128" };
+  return {
+    symbology: null,
+    valid: false,
+    label: "Caractères non imprimables",
+  };
+}
+
 /* Motifs binaires des chiffres (1 = barre) — 7 modules par chiffre. */
 const L_PATTERNS = [
   "0001101",

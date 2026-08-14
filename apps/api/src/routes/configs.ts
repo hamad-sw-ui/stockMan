@@ -94,7 +94,26 @@ const TENANT_SECRET_KEYS = [
 // Préférences métier lisibles en clair (interrupteurs de fonctionnalités).
 // cash_session_required (E6) : « true » interdit de vendre/encaisser hors
 // session de caisse ouverte.
-const TENANT_PREF_KEYS = ["cash_session_required"] as const;
+// barcode_internal_prefix (C2) : préfixe magasin GS1 (20–29) des codes-barres
+// internes générés.
+const TENANT_PREF_KEYS = [
+  "cash_session_required",
+  "barcode_internal_prefix",
+] as const;
+/** Règle de validation par préférence (valeur textuelle). */
+const PREF_RULES: Record<
+  string,
+  { check: (v: string) => boolean; hint: string }
+> = {
+  cash_session_required: {
+    check: (v) => ["true", "false"].includes(v),
+    hint: "« true » ou « false »",
+  },
+  barcode_internal_prefix: {
+    check: (v) => /^2[0-9]$/.test(v),
+    hint: "2 chiffres entre 20 et 29 (plage GS1 « magasin »)",
+  },
+};
 
 router.get(
   "/tenant",
@@ -128,10 +147,11 @@ router.put(
     const b = req.body as { key: string; value: string };
     const t = (req as AuthRequest).user.tenantId;
     const isPref = (TENANT_PREF_KEYS as readonly string[]).includes(b.key);
-    if (isPref && !["true", "false"].includes(b.value)) {
+    const rule = PREF_RULES[b.key];
+    if (rule && !rule.check(b.value.trim())) {
       throw HttpError.badRequest(
         "CONFIG_VALUE_INVALID",
-        `La préférence « ${b.key} » attend « true » ou « false ».`,
+        `La préférence « ${b.key} » attend ${rule.hint}.`,
       );
     }
     await query(

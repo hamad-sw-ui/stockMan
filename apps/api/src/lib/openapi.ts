@@ -384,6 +384,17 @@ export const ROUTES: RouteDoc[] = [
     errors: ["404 BARCODE_UNKNOWN"],
   },
   {
+    method: "post",
+    path: "/api/products/barcodes/generate",
+    tag: "Produits",
+    summary:
+      "Génère un EAN-13 interne (plage magasin 20–29, séquence atomique, re-tirage sur collision). Cible sans code → devient code principal ; sinon alias. Préfixe réglable (config barcode_internal_prefix).",
+    role: "ADMIN",
+    body: { productId: "uuid", variantId: "uuid?", unitId: "uuid?" },
+    errors: ["400 VARIANT_UNKNOWN / UNIT_UNKNOWN", "404 NOT_FOUND"],
+    created: true,
+  },
+  {
     method: "get",
     path: "/api/products/{id}/barcodes",
     tag: "Produits",
