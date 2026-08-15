@@ -75,6 +75,7 @@ export default function ProductFormPage() {
     hasVariants: false,
     trackBatch: false,
     requiresSerial: false,
+    isWeighed: false,
     taxRate: "19.25",
     wholesalePrice: "",
     wholesaleMinQty: "0",
@@ -131,6 +132,7 @@ export default function ProductFormPage() {
         hasVariants: p.has_variants,
         trackBatch: p.track_batch ?? false,
         requiresSerial: p.requires_serial ?? false,
+        isWeighed: p.is_weighed ?? false,
         wholesalePrice:
           p.wholesale_price != null ? String(p.wholesale_price) : "",
         wholesaleMinQty: String(p.wholesale_min_qty ?? 0),
@@ -193,6 +195,7 @@ export default function ProductFormPage() {
           hasVariants: f.hasVariants,
           trackBatch: f.trackBatch,
           requiresSerial: f.requiresSerial,
+          isWeighed: f.isWeighed,
           wholesalePrice:
             f.wholesalePrice === "" ? null : num(f.wholesalePrice),
           wholesaleMinQty: num(f.wholesaleMinQty),
@@ -219,6 +222,7 @@ export default function ProductFormPage() {
           hasVariants: f.hasVariants,
           trackBatch: f.trackBatch,
           requiresSerial: f.requiresSerial,
+          isWeighed: f.isWeighed,
           wholesalePrice:
             f.wholesalePrice === "" ? null : num(f.wholesalePrice),
           wholesaleMinQty: num(f.wholesaleMinQty),
@@ -496,6 +500,17 @@ export default function ProductFormPage() {
           Produit sérialisé (téléphonie, électroménager…) — chaque unité est
           identifiée par un numéro de série/IMEI unique : saisi à la réception,
           vendu au numéro près (garantie, vol, SAV)
+        </label>
+        <label className="row" style={{ gap: 8, marginTop: 8 }}>
+          <input
+            type="checkbox"
+            checked={f.isWeighed}
+            onChange={(e) => setF({ ...f, isWeighed: e.target.checked })}
+          />
+          Article à pesée (boucherie, primeur…) — vendu via les étiquettes de la
+          balance : le code-barres ci-dessus est alors le code article à 7
+          chiffres « préfixe + article » (ex. 2600123) et la caisse décode
+          automatiquement prix ou poids embarqués (mode réglé dans Paramètres)
         </label>
         {f.hasVariants ? (
           isEdit ? (

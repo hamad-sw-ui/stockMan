@@ -29,10 +29,12 @@ router.get(
       favorites,
       customers,
       aliases,
+      weightedCfg,
     ] = await Promise.all([
       query(
         `SELECT p.id, p.name, p.barcode, p.selling_price::float, p.purchase_price::float,
                 p.min_stock_level::float, p.has_variants, p.image_url, p.requires_serial,
+                p.is_weighed,
                 un.id AS unit_id, un.symbol AS unit_symbol, un.base_value::float AS unit_base_value,
                 c.name AS category_name
            FROM products p
@@ -90,6 +92,13 @@ router.get(
           LIMIT 5001`,
         [u.tenantId],
       ),
+      // C5 — mode de décodage des étiquettes de balance (pesée embarquée) :
+      // OFF (défaut) / PRICE / WEIGHT. Lu ici pour rester hors-ligne.
+      query(
+        `SELECT value FROM tenant_configs
+          WHERE tenant_id=$1 AND key='barcode_weighted_mode'`,
+        [u.tenantId],
+      ),
     ]);
 
     // Jointure effectuée côté application (évite json_agg, portable)
@@ -131,6 +140,12 @@ router.get(
       customers: customers.rows,
       barcodes: aliases.rows.slice(0, 5000),
       barcodesComplete: aliases.rows.length <= 5000,
+      // C5 — décodage des codes de balance à la caisse (« OFF » par défaut).
+      weightedMode:
+        weightedCfg.rows[0]?.value === "PRICE" ||
+        weightedCfg.rows[0]?.value === "WEIGHT"
+          ? weightedCfg.rows[0].value
+          : "OFF",
     });
   }),
 );

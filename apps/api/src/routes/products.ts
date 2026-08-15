@@ -854,6 +854,10 @@ const productInput = z.object({
   /** E8 — sérialisation (IMEI / n° de série) : vente/entrée à l'unité de
    *  base identifiée par un numéro unique. */
   requiresSerial: z.boolean().default(false),
+  /** C5 — article à pesée : `barcode` porte alors le code article balance
+   *  « PPAAAAA » (7 chiffres, préfixe magasin 20–29) ; l'étiquette EAN-13
+   *  émise embarque prix (PRICE) ou poids (WEIGHT), décodés à la caisse. */
+  isWeighed: z.boolean().default(false),
   /** E8 — motif du changement de prix (PATCH), versé à l'historique. */
   priceChangeReason: z.string().trim().max(500).nullish(),
   variants: z.array(variantInput).max(200).default([]),
@@ -901,8 +905,8 @@ router.post(
     }
     const created = await withTransaction(async (client) => {
       const r = await client.query(
-        `INSERT INTO products (tenant_id, name, description, category_id, barcode, purchase_price, selling_price, min_stock_level, unit_id, has_variants, track_batch, avg_cost, tax_rate, wholesale_price, wholesale_min_qty, requires_serial)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING *`,
+        `INSERT INTO products (tenant_id, name, description, category_id, barcode, purchase_price, selling_price, min_stock_level, unit_id, has_variants, track_batch, avg_cost, tax_rate, wholesale_price, wholesale_min_qty, requires_serial, is_weighed)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING *`,
         [
           u.tenantId,
           b.name,
@@ -920,6 +924,7 @@ router.post(
           b.wholesalePrice ?? null,
           b.wholesaleMinQty,
           b.requiresSerial,
+          b.isWeighed,
         ],
       );
       const product = r.rows[0];
@@ -1083,6 +1088,7 @@ router.patch(
                 wholesale_min_qty=COALESCE($15,wholesale_min_qty),
                 requires_serial=COALESCE($16,requires_serial),
                 wholesale_price=CASE WHEN $17::boolean THEN $18 ELSE wholesale_price END,
+                is_weighed=COALESCE($19,is_weighed),
                 updated_at=now()
           WHERE id=$1 AND tenant_id=$2 RETURNING *`,
         [
@@ -1104,6 +1110,7 @@ router.patch(
           b.requiresSerial ?? null,
           b.wholesalePrice !== undefined, // NULL explicite = grille de gros retirée
           b.wholesalePrice ?? null,
+          b.isWeighed ?? null,
         ],
       );
       // Write-through registre : miroir du code principal (pose ou retrait).

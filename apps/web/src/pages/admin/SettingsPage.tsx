@@ -253,6 +253,7 @@ function CompanyTab() {
         </div>
       </Card>
       <CashPrefsCard />
+      <WeightedBarcodeCard />
     </>
   );
 }
@@ -310,6 +311,79 @@ function CashPrefsCard() {
             <option value="true">
               Oui — exiger une session de caisse ouverte
             </option>
+          </Select>
+        </Field>
+        <Button
+          size="sm"
+          loading={saving}
+          onClick={save}
+          disabled={value === null || value === current}
+        >
+          Appliquer
+        </Button>
+      </div>
+    </Card>
+  );
+}
+
+/* ------------------------- Codes balance (pesée, C5) ----------------------- */
+type WeightedMode = "OFF" | "PRICE" | "WEIGHT";
+function WeightedBarcodeCard() {
+  const { show } = useToast();
+  const q = useQuery<TenantConfigRow[]>("configs:tenant", "/configs/tenant");
+  const current: WeightedMode =
+    (q.data?.find((c) => c.key === "barcode_weighted_mode")
+      ?.value as WeightedMode) ?? "OFF";
+  const [value, setValue] = useState<WeightedMode | null>(null);
+  const [saving, setSaving] = useState(false);
+  const effective = value ?? current;
+
+  const save = async () => {
+    setSaving(true);
+    try {
+      await put("/configs/tenant", {
+        key: "barcode_weighted_mode",
+        value: effective,
+      });
+      invalidateQueries("configs:tenant");
+      show(
+        effective === "OFF"
+          ? "Étiquettes de balance ignorées à la caisse."
+          : effective === "PRICE"
+            ? "Caisse : le prix FCFA des étiquettes de balance est désormais décodé."
+            : "Caisse : le poids (grammes) des étiquettes de balance est désormais décodé.",
+        "success",
+      );
+    } catch (e) {
+      show(
+        e instanceof Error ? e.message : "Enregistrement impossible",
+        "error",
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (q.loading && !q.data) return null;
+  return (
+    <Card title="Balance étiqueteuse — codes à pesée (GS1 20-29)">
+      <p className="muted" style={{ marginTop: 0 }}>
+        Pour les produits cochés « Article à pesée » (code article à 7 chiffres,
+        ex. <code>2600123</code>), la caisse décode les étiquettes de la balance
+        au scan : quantité ou prix remplis sans saisie.
+      </p>
+      <div className="row" style={{ alignItems: "flex-end", flexWrap: "wrap" }}>
+        <Field
+          label="Interprétation du bloc valeur des étiquettes"
+          hint="PRICE : la valeur (= prix payé en FCFA) donne la quantité via le prix catalogue. WEIGHT : la valeur est le poids en grammes."
+        >
+          <Select
+            value={effective}
+            onChange={(e) => setValue(e.target.value as WeightedMode)}
+          >
+            <option value="OFF">Ignorées — codes à pesée désactivés</option>
+            <option value="PRICE">Prix embarqué (FCFA)</option>
+            <option value="WEIGHT">Poids embarqué (grammes)</option>
           </Select>
         </Field>
         <Button

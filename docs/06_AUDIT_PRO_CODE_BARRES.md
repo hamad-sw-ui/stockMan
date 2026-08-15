@@ -252,3 +252,22 @@ zéro régression de schéma (colonnes legacy conservées).
 > ⚠️ **Action immédiate indépendante du plan** (quick win, < 1 j, dès C1) :
 > poser l'unicité du code **variante** (C2) et livrer la grille IMEI de
 > réception (C7) — deux défauts 🔴 corrigeables sans attendre le reste.
+
+---
+
+## H. État de livraison (15/08/2026) — ✅ PLAN INTÉGRALEMENT LIVRÉ
+
+| Phase  | Livrable effectivement implémenté                                                                                                                                                                                                                                                                                                                                                         | Tests ajoutés  |
+| ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | :------------: |
+| **C1** | Registre `product_barcodes` (V011) multi-cibles produit/variante/alias, unicité globale par tenant nommant le détenteur, résolveur unique `GET /api/products/lookup/:code` (+ endpoint legacy compat), validation GS1 (EAN-13/EAN-8/UPC-A/Code 39/Code 128), write-through fiche/variante/import CSV, dédoublonnage contrôlé `-DUP-` à la migration                                       |     18 API     |
+| **C2** | Génération interne EAN-13 (`barcode_sequences` V012, préfixe magasin 20–29 configurable, re-tirage anti-collision), boutons 🎲 formulaires produit/variante, badge de symbologie en direct, erreur `BARCODE_TAKEN` + lien vers le détenteur                                                                                                                                               | 10 API + 4 web |
+| **C3** | `ScanField` universel (douchette Entrée, auto-envoi 350 ms sans suffixe, caméra progressive) posé sur réceptions, transferts, campagnes, devis, achats, recherche produits ; caisse multi-codes (bootstrap alias 5 000 + `barcodesComplete`, résolveur pur `posScan`, secours en ligne) ; **fix C7** : grille IMEI de réception (chips anti-doublon, compteur n/attendu)                  | 8 API + 17 web |
+| **C4** | Modale partagée `LabelsPrintModal` : détail réception (quantités reçues modifiables) + multi-sélection produits, gabarits A4 grille / 50×30 / 38×25, options prix/enseigne/dépôt, symbologie auto (EAN-13/Code 39/Code 128), export **ZPL** `.zpl`                                                                                                                                        |     6+ web     |
+| **C5** | Codes à pesée GS1 20–29 : flag produit `is_weighed` (V013), préférence `barcode_weighted_mode` OFF/PRICE/WEIGHT (validée + carte Paramètres), parseur `weightedBarcode` (checksum EAN-13, anti-collision flag+préfixe), résolution caisse hors-ligne (WEIGHT = grammes→kg ; PRICE = prix÷prix catalogue, arrondi au gramme), cumul de pesées identiques ; bootstrap expose mode + drapeau | 6 API + 12 web |
+
+**Suites vertes à la livraison : API 223/223 · web 98/98** (types stricts + build). Le
+critère C5 se vérifie sur l'étiquette `2600123015004` (préfixe 26, article 00123,
+valeur 01500, contrôle 4) → **1,500 kg** en mode WEIGHT, **1 500 FCFA → 0,5 kg à
+3 000 F/kg** en mode PRICE. (Le code cité en exemple au § C5, `…00150 7`, portait
+un chiffre de contrôle incohérent avec la valeur affichée : la référence de test
+retenue est l'étiquette à checksum valide ci-dessus.)

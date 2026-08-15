@@ -34,6 +34,7 @@ import { installAutoSync } from "../../lib/offline/sync";
 import { usePosBootstrap, type BootstrapStatus } from "../../lib/pos";
 import { resolvePosScan } from "../../lib/posScan";
 import { lookupBarcode } from "../../lib/scanLookup";
+import { resolveWeighedScan } from "../../lib/weightedBarcode";
 import { useOnlineStatus } from "../../components/Shell";
 import { useToast } from "../../store/toast";
 import type {
@@ -44,6 +45,8 @@ import type {
 } from "../../lib/types";
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
+/** Quantités balance (kg) — précision au gramme. */
+const round3 = (n: number) => Math.round(n * 1000) / 1000;
 
 /* ------------------------------ Types locaux ------------------------------- */
 interface SoldState {
@@ -300,10 +303,58 @@ export default function PosPage() {
    *  produit > variante > alias fournisseur/conditionnement (l'unité scannée
    *  suit son facteur, recalculé par le moteur cart.ts). Chemin commun à la
    *  douchette USB, à la saisie Entrée et au scanner caméra. */
+  /** Article à pesée (C5) : étiquette de balance résolue → ligne à la
+   *  quantité embarquée (WEIGHT) ou dérivée du prix (PRICE). */
+  const addWeighed = (code: string): boolean => {
+    if (!b) return false;
+    const w = resolveWeighedScan(b.products, b.weightedMode ?? "OFF", code);
+    if (!w) return false;
+    const p = b.products.find((x) => x.id === w.productId);
+    if (!p || p.requires_serial) return false;
+    const catUnit = p.unit_id ? (unitById.get(p.unit_id) ?? null) : null;
+    const line = makeLine({
+      product: {
+        id: p.id,
+        name: p.name,
+        sellingPrice: p.selling_price,
+        unitBaseValue: p.unit_base_value ?? 1,
+        unitId: p.unit_id,
+        unitSymbol: p.unit_symbol,
+        barcode: p.barcode,
+      },
+      variant: null,
+      unit: catUnit
+        ? {
+            id: catUnit.id,
+            symbol: catUnit.symbol,
+            baseValue: catUnit.base_value,
+          }
+        : null,
+      quantity: w.quantity,
+    });
+    setCart((prev) => {
+      const existing = prev.find((l) => l.key === line.key);
+      if (existing)
+        // Deux pesées du même article : on CUMULE les quantités.
+        return prev.map((l) =>
+          l.key === line.key
+            ? makeLine({ ...l, quantity: round3(l.quantity + w.quantity) })
+            : l,
+        );
+      return [...prev, line];
+    });
+    show(
+      `⚖️ ${p.name} — ${w.label}${w.embeddedPrice ? " embarqué" : ""} ajouté au panier.`,
+      "success",
+    );
+    return true;
+  };
+
   const addByBarcode = (code: string): boolean => {
     if (!code || !b) return false;
     const hit = resolvePosScan(b, code);
-    if (!hit) return false;
+    // C5 — second essai : étiquette de balance à pesée (si le mode est actif).
+    if (!hit) return addWeighed(code);
     if (hit.kind === "product") {
       pickProduct(hit.productId);
       return true;

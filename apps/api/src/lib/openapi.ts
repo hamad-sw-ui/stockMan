@@ -1814,7 +1814,7 @@ export const ROUTES: RouteDoc[] = [
     path: "/api/configs/tenant",
     tag: "Configuration",
     summary:
-      "Enregistrer une clé : secrets (sms_username, sms_api_key, whatsapp_token, whatsapp_phone_id) ou préférence (cash_session_required = « true »/« false » : vendre/encaisser exige une session de caisse ouverte — E6).",
+      "Enregistrer une clé : secrets (sms_username, sms_api_key, whatsapp_token, whatsapp_phone_id) ou préférences (cash_session_required = « true »/« false » — E6 ; barcode_internal_prefix = « 2x » GS1 magasin — C2 ; barcode_weighted_mode = « OFF »/« PRICE »/« WEIGHT » : décodage caisse des étiquettes de balance à pesée — C5).",
     role: "ADMIN",
     body: { key: "string", value: "string" },
     errors: ["400 CONFIG_VALUE_INVALID"],

@@ -95,6 +95,7 @@ export interface ProductListItem {
   wholesale_price?: number | null; // prix de GROS TTC (E8) — NULL = pas de grille
   wholesale_min_qty?: number; // quantité seuil d'application du prix de gros (E8)
   requires_serial?: boolean; // sérialisation IMEI / n° de série (E8)
+  is_weighed?: boolean; // article à pesée — balance étiqueteuse (C5)
   min_stock_level: number;
   category_id: string | null;
   category_name: string | null;
@@ -146,6 +147,8 @@ export interface BootstrapProduct {
   unit_base_value: number | null;
   /** Produit sérialisé (IMEI) — capture obligatoire des numéros à la vente (E8). */
   requires_serial?: boolean;
+  /** Article à pesée (C5) : `barcode` = code article balance « PPAAAAA ». */
+  is_weighed?: boolean;
   category_name: string | null;
   variants: Array<{
     id: string;
@@ -187,7 +190,12 @@ export interface PosBootstrap {
   barcodes?: PosBarcodeAlias[]; // C3 — alias multi-codes
   /** false = registre > 5 000 alias : la caisse consulte l'API à la volée. */
   barcodesComplete?: boolean;
+  /** C5 — décodage des étiquettes de balance (« OFF » = ignorées). */
+  weightedMode?: WeightedMode;
 }
+
+/** C5 — interprétation du bloc valeur des étiquettes de balance (20–29). */
+export type WeightedMode = "OFF" | "PRICE" | "WEIGHT";
 
 export interface SaleListItem {
   id: string;

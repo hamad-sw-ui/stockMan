@@ -96,9 +96,13 @@ const TENANT_SECRET_KEYS = [
 // session de caisse ouverte.
 // barcode_internal_prefix (C2) : préfixe magasin GS1 (20–29) des codes-barres
 // internes générés.
+// barcode_weighted_mode (C5) : décodage à la caisse des étiquettes de balance
+// (EAN-13 « PPAAAAAVVVVVK ») — OFF ignoré, PRICE = prix FCFA embarqué,
+// WEIGHT = poids en grammes embarqué.
 const TENANT_PREF_KEYS = [
   "cash_session_required",
   "barcode_internal_prefix",
+  "barcode_weighted_mode",
 ] as const;
 /** Règle de validation par préférence (valeur textuelle). */
 const PREF_RULES: Record<
@@ -112,6 +116,10 @@ const PREF_RULES: Record<
   barcode_internal_prefix: {
     check: (v) => /^2[0-9]$/.test(v),
     hint: "2 chiffres entre 20 et 29 (plage GS1 « magasin »)",
+  },
+  barcode_weighted_mode: {
+    check: (v) => ["OFF", "PRICE", "WEIGHT"].includes(v),
+    hint: "« OFF », « PRICE » (prix embarqué) ou « WEIGHT » (poids embarqué)",
   },
 };
 
