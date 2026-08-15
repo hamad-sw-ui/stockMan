@@ -1489,6 +1489,12 @@ table.table {
 
 /* ============================================================
    Responsive : tablette & mobile
+   ------------------------------------------------------------
+   Breakpoints unifiés du projet (R1) : 360 / 640 / 860 / 1000 /
+   1080 px. Les règles historiques ci-dessous sont conservées à
+   l'identique ; le bloc « R1 » plus bas ne fait qu'AJOUTER des
+   renforts (modales plein écran, cibles tactiles, repli 360 px)
+   sans retoucher une seule règle existante.
    ============================================================ */
 @media (max-width: 1080px) {
   .pos-wrap {
@@ -1542,6 +1548,159 @@ table.table {
   .topbar,
   .toasts {
     display: none !important;
+  }
+}
+
+/* ============================================================
+   R1 — Fondations mobiles & tactiles (pure additif)
+   ------------------------------------------------------------
+   1. Modales plein écran ≤ 640 px (opt-out `.modal-keep` pour
+      les confirmations courtes qui restent centrées).
+   2. Topbar / barres de filtres repliées ≤ 640 px + utilitaire
+      réutilisable `.filters-row`.
+   3. Cibles tactiles ≥ 40 px sur pointeurs grossiers.
+   4. Inputs à 16 px ≤ 640 px (bloque l'auto-zoom iOS).
+   5. Repli propre des états vides et badges sur 360 px.
+   Toutes les règles viewport sont préfixées `screen` pour ne
+   jamais perturber les impressions (étiquettes, reçus Z).
+   ============================================================ */
+
+/* --- 1. Modales plein écran sur téléphone --- */
+@media screen and (max-width: 640px) {
+  .modal-backdrop {
+    padding: 0;
+  }
+  .modal {
+    max-width: 100%;
+    min-height: 100vh;
+    min-height: 100dvh;
+    max-height: none;
+    border-radius: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .modal.modal-lg {
+    max-width: 100%;
+  }
+  /* En colonne flexible, autoriser le rétrécissement horizontal des enfants. */
+  .modal > * {
+    min-width: 0;
+  }
+  .modal-keep.modal,
+  .modal.modal-keep {
+    min-height: 0;
+    max-height: 88vh;
+    border-radius: var(--radius-l);
+    width: calc(100% - 48px);
+    margin: 24px auto;
+    align-self: center;
+  }
+  .modal-backdrop:has(> .modal-keep) {
+    padding: 18px;
+    align-items: center;
+  }
+}
+
+/* --- 2. Topbar & barres de filtres repliables --- */
+@media screen and (max-width: 640px) {
+  .topbar {
+    flex-wrap: wrap;
+    row-gap: 6px;
+    padding: 8px 12px;
+  }
+  .page {
+    padding: 12px 10px;
+  }
+  .tabs {
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    scrollbar-width: none;
+    padding-bottom: 2px;
+  }
+  .tabs button {
+    white-space: nowrap;
+  }
+}
+.filters-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.filters-row .input,
+.filters-row select,
+.filters-row .input-icon {
+  flex: 1 1 170px;
+  min-width: 0;
+}
+.filters-row .input-icon .input {
+  width: 100%;
+}
+@media screen and (max-width: 640px) {
+  .filters-row {
+    gap: 8px;
+  }
+  .filters-row .btn {
+    flex: 1 1 auto;
+  }
+}
+
+/* --- 3. Cibles tactiles ≥ 40 px (doigts, gants de magasin) --- */
+@media (pointer: coarse) {
+  .btn {
+    min-height: 40px;
+  }
+  .btn-sm {
+    min-height: 36px;
+    padding-top: 7px;
+    padding-bottom: 7px;
+  }
+  .chip {
+    min-height: 36px;
+    display: inline-flex;
+    align-items: center;
+  }
+  .side-link {
+    padding-top: 12px;
+    padding-bottom: 12px;
+  }
+  .menu-pop a,
+  .menu-pop button {
+    min-height: 40px;
+    display: flex;
+    align-items: center;
+  }
+}
+
+/* --- 4. Anti auto-zoom iOS : jamais moins de 16 px dans un champ --- */
+@media screen and (max-width: 640px) {
+  input,
+  select,
+  textarea {
+    font-size: max(16px, 1em);
+  }
+}
+
+/* --- 5. Repli propre à 360 px (petits Android d'entrée de gamme) --- */
+@media screen and (max-width: 360px) {
+  .empty {
+    padding: 26px 8px;
+  }
+  .empty .emoji {
+    font-size: 1.6rem;
+  }
+  .offline-pill {
+    padding: 4px 9px;
+    font-size: 0.72rem;
+  }
+  .topbar {
+    padding: 8px 10px;
+  }
+  .kpi {
+    padding: 12px 14px;
+  }
+  h1 {
+    font-size: 1.15rem;
   }
 }
 

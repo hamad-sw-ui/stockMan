@@ -308,12 +308,15 @@ export function Modal({
   children,
   wide,
   footer,
+  keep,
 }: {
   title: ReactNode;
   onClose: () => void;
   children: ReactNode;
   wide?: boolean;
   footer?: ReactNode;
+  /** R1 : rester une petite boîte centrée même ≤ 640 px (confirmations courtes). */
+  keep?: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -333,7 +336,7 @@ export function Modal({
       role="presentation"
     >
       <div
-        className={`modal ${wide ? "modal-lg" : ""}`}
+        className={`modal ${wide ? "modal-lg" : ""} ${keep ? "modal-keep" : ""}`}
         role="dialog"
         aria-modal="true"
         ref={ref}
@@ -384,6 +387,7 @@ export function ConfirmModal({
     <Modal
       title={title}
       onClose={onClose}
+      keep
       footer={
         <>
           <Button variant="outline" onClick={onClose}>
