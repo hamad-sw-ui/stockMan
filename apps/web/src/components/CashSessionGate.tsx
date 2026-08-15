@@ -2,13 +2,15 @@
  *  (« cash_session_required ») et qu'aucune caisse n'est ouverte sur le
  *  dépôt, la vente serait refusée par le serveur — on bloque donc l'écran
  *  avec le formulaire d'ouverture. Hors-ligne, le contrôle reste côté
- *  serveur à la synchronisation. */
+ *  serveur à la synchronisation. Textes via i18n (I1, clés « gate.* »). */
+import { useTranslation } from "react-i18next";
 import { useQuery } from "../lib/query";
 import { Card } from "./ui";
 import { OpenSessionForm } from "../pages/vendor/CashSessionPage";
 import type { CashSessionCurrent } from "../lib/types";
 
 export function CashSessionGate() {
+  const { t } = useTranslation();
   const q = useQuery<CashSessionCurrent>(
     "cash:current",
     "/cash-sessions/current",
@@ -20,11 +22,8 @@ export function CashSessionGate() {
 
   return (
     <div className="modal-backdrop" style={{ zIndex: 60 }}>
-      <Card title="🔒 Ouvrez la caisse pour commencer">
-        <p className="muted">
-          La direction exige une session de caisse ouverte : vos ventes seront
-          refusées tant que la caisse n'est pas ouverte (fond de départ compté).
-        </p>
+      <Card title={t("gate.title")}>
+        <p className="muted">{t("gate.body")}</p>
         <OpenSessionForm onOpened={() => undefined} />
       </Card>
     </div>

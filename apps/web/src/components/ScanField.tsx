@@ -12,6 +12,7 @@
  *    auto-rempli) fonctionnent donc PARTOUT où ce champ est posé.
  */
 import { useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { ApiError } from "../lib/http";
 import { lookupBarcode, BarcodeLookupResult } from "../lib/scanLookup";
 import { CameraScanner, cameraScanSupported } from "./CameraScanner";
@@ -22,7 +23,7 @@ const AUTO_DELAY_MS = 350;
 export function ScanField({
   onResolve,
   onUnknown,
-  placeholder = "Scanner ou saisir un code-barres…",
+  placeholder,
   autoFocus,
   disabled,
   label,
@@ -43,6 +44,8 @@ export function ScanField({
   const [camOpen, setCamOpen] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autoFired = useRef("");
+  const { t } = useTranslation();
+  const ph = placeholder ?? t("scan.placeholder");
 
   const clearTimer = () => {
     if (timer.current) clearTimeout(timer.current);
@@ -67,10 +70,10 @@ export function ScanField({
     } catch (e) {
       const msg =
         e instanceof ApiError && e.status === 404
-          ? `Code inconnu : « ${code} ».`
+          ? t("scan.unknownCode", { code })
           : e instanceof Error
             ? e.message
-            : "Recherche impossible.";
+            : t("scan.lookupError");
       setError(msg);
       onUnknown?.(code, msg);
     } finally {
@@ -117,11 +120,11 @@ export function ScanField({
           value={value}
           onChange={(e) => onChange(e.target.value)}
           onKeyDown={onKeyDown}
-          placeholder={placeholder}
+          placeholder={ph}
           autoFocus={autoFocus}
           disabled={disabled || busy}
           inputMode="search"
-          aria-label={label ?? "Champ de scan code-barres"}
+          aria-label={label ?? t("scan.ariaDefault")}
         />
         <button
           type="button"
@@ -132,7 +135,7 @@ export function ScanField({
             void resolve(value);
           }}
           disabled={disabled || busy || !value.trim()}
-          title="Rechercher ce code"
+          title={t("scan.lookupButton")}
         >
           🔍
         </button>
@@ -142,7 +145,7 @@ export function ScanField({
             className="btn btn-outline btn-sm"
             onClick={() => setCamOpen((o) => !o)}
             disabled={disabled || busy}
-            title="Scanner avec la caméra"
+            title={t("scan.cameraButton")}
           >
             📷
           </button>
@@ -150,7 +153,7 @@ export function ScanField({
       </div>
       {busy ? (
         <p className="muted" style={{ margin: "4px 0 0", fontSize: 12 }}>
-          Recherche du code…
+          {t("scan.searching")}
         </p>
       ) : null}
       {okFlash && !error ? (

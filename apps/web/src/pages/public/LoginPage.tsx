@@ -1,10 +1,12 @@
-/** Connexion : mot de passe classique ou PIN caisse (kiosque vendeur). */
+/** Connexion : mot de passe classique ou PIN caisse (kiosque vendeur).
+ *  I1 : textes via i18n (clés « auth.login.* ») + sélecteur de langue. */
 import { useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { useAuth, type Role } from "../../store/auth";
 import { ApiError } from "../../lib/http";
 import { Button, Card, Field, Input, Tabs } from "../../components/ui";
-import { usePageTitle } from "../../components/Shell";
+import { LanguageSwitcher, usePageTitle } from "../../components/Shell";
 
 export function homeForRole(role: Role): string {
   return role === "SUPER_ADMIN"
@@ -15,7 +17,8 @@ export function homeForRole(role: Role): string {
 }
 
 export default function LoginPage() {
-  usePageTitle("Connexion");
+  const { t } = useTranslation();
+  usePageTitle(t("auth.login.pageTitle"));
   const { login, loginWithPin } = useAuth();
   const navigate = useNavigate();
   const [tab, setTab] = useState("password");
@@ -33,7 +36,7 @@ export default function LoginPage() {
       const user = await login(email.trim(), password);
       navigate(homeForRole(user.role), { replace: true });
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Connexion impossible.");
+      setError(err instanceof ApiError ? err.message : t("auth.login.error"));
     } finally {
       setLoading(false);
     }
@@ -48,7 +51,7 @@ export default function LoginPage() {
       const user = await loginWithPin(email.trim(), p);
       navigate(homeForRole(user.role), { replace: true });
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Connexion impossible.");
+      setError(err instanceof ApiError ? err.message : t("auth.login.error"));
       setPin("");
     } finally {
       setLoading(false);
@@ -58,40 +61,49 @@ export default function LoginPage() {
   return (
     <div className="auth-wrap">
       <div className="auth-card">
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "flex-end",
+            marginBottom: 10,
+          }}
+        >
+          <LanguageSwitcher />
+        </div>
         <div className="auth-brand">
           <span className="logo-dot">📦</span>
           <div>
             <h1>StockMan</h1>
-            <small>Gestion de dépôts, stock & caisse</small>
+            <small>{t("auth.login.tagline")}</small>
           </div>
         </div>
         <Card>
           <Tabs
             tabs={[
-              { id: "password", label: "🔑 Mot de passe" },
-              { id: "pin", label: "⚡ PIN caisse" },
+              { id: "password", label: t("auth.login.tabPassword") },
+              { id: "pin", label: t("auth.login.tabPin") },
             ]}
             active={tab}
             onChange={setTab}
           />
-          <Field label="Email" required>
+          <Field label={t("auth.login.email")} required>
             <Input
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="vous@entreprise.cm"
+              placeholder={t("auth.emailPlaceholder")}
               autoComplete="username"
               autoFocus
             />
           </Field>
           {tab === "password" ? (
             <form onSubmit={(e) => void submitPassword(e)}>
-              <Field label="Mot de passe" required>
+              <Field label={t("auth.login.password")} required>
                 <Input
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
+                  placeholder={t("auth.login.passwordPlaceholder")}
                   autoComplete="current-password"
                 />
               </Field>
@@ -104,10 +116,10 @@ export default function LoginPage() {
                 </p>
               ) : null}
               <Button block size="lg" type="submit" loading={loading}>
-                Se connecter
+                {t("auth.login.submit")}
               </Button>
               <p style={{ textAlign: "center", marginTop: 12 }}>
-                <Link to="/mot-de-passe-oublie">Mot de passe oublié ?</Link>
+                <Link to="/mot-de-passe-oublie">{t("auth.login.forgot")}</Link>
               </p>
             </form>
           ) : (
@@ -132,7 +144,7 @@ export default function LoginPage() {
                 className="muted"
                 style={{ textAlign: "center", fontSize: "0.85rem" }}
               >
-                Saisissez votre PIN (4 à 6 chiffres)
+                {t("auth.login.pinHint")}
               </p>
               {error ? (
                 <p
@@ -164,7 +176,7 @@ export default function LoginPage() {
                 <button
                   type="button"
                   onClick={() => setPin("")}
-                  aria-label="Effacer"
+                  aria-label={t("auth.login.erase")}
                 >
                   ⌫
                 </button>
@@ -184,7 +196,7 @@ export default function LoginPage() {
                   disabled={loading || pin.length < 4}
                   onClick={() => void submitPin()}
                   style={{ background: "var(--primary)", color: "#fff" }}
-                  aria-label="Valider"
+                  aria-label={t("auth.login.validate")}
                 >
                   ✓
                 </button>
@@ -193,8 +205,8 @@ export default function LoginPage() {
           )}
         </Card>
         <p className="auth-foot">
-          Pas encore de compte ?{" "}
-          <Link to="/inscription">Créer ma boutique (essai 14 jours)</Link>
+          {t("auth.login.footerNew")}{" "}
+          <Link to="/inscription">{t("auth.login.footerRegister")}</Link>
         </p>
       </div>
     </div>

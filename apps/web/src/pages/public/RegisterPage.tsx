@@ -1,20 +1,24 @@
-/** Inscription d'une nouvelle boutique (tenant + gérant + essai 14 j). */
+/** Inscription d'une nouvelle boutique (tenant + gérant + essai 14 j).
+ *  I1 : textes via i18n (clés « auth.register.* ») + sélecteur de langue. */
 import { useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { useAuth } from "../../store/auth";
 import { ApiError } from "../../lib/http";
 import { Button, Card, Field, Input } from "../../components/ui";
-import { usePageTitle } from "../../components/Shell";
+import { LanguageSwitcher, usePageTitle } from "../../components/Shell";
 
-function validatePassword(p: string): string | null {
-  if (p.length < 8) return "8 caractères minimum.";
-  if (!/[a-zA-Z]/.test(p)) return "Au moins une lettre requise.";
-  if (!/[0-9]/.test(p)) return "Au moins un chiffre requis.";
+/** Règle mot de passe : renvoie la clé i18n du motif de refus (ou null). */
+function passwordIssueKey(p: string): string | null {
+  if (p.length < 8) return "pwTooShort";
+  if (!/[a-zA-Z]/.test(p)) return "pwLetter";
+  if (!/[0-9]/.test(p)) return "pwDigit";
   return null;
 }
 
 export default function RegisterPage() {
-  usePageTitle("Créer ma boutique");
+  const { t } = useTranslation();
+  usePageTitle(t("auth.register.pageTitle"));
   const { register } = useAuth();
   const navigate = useNavigate();
   const [f, setF] = useState({
@@ -36,13 +40,15 @@ export default function RegisterPage() {
     e.preventDefault();
     const errs: Record<string, string> = {};
     if (f.tenantName.trim().length < 2)
-      errs.tenantName = "Nom d'entreprise requis.";
-    if (f.userName.trim().length < 2) errs.userName = "Votre nom est requis.";
-    if (!/^\S+@\S+\.\S+$/.test(f.email.trim())) errs.email = "Email invalide.";
-    const pw = validatePassword(f.password);
-    if (pw) errs.password = pw;
+      errs.tenantName = t("auth.register.shopNameError");
+    if (f.userName.trim().length < 2)
+      errs.userName = t("auth.register.ownerNameError");
+    if (!/^\S+@\S+\.\S+$/.test(f.email.trim()))
+      errs.email = t("auth.register.emailError");
+    const pw = passwordIssueKey(f.password);
+    if (pw) errs.password = t(`auth.register.${pw}`);
     if (f.confirm !== f.password)
-      errs.confirm = "Les mots de passe ne correspondent pas.";
+      errs.confirm = t("auth.register.confirmError");
     setErrors(errs);
     if (Object.keys(errs).length > 0) return;
     setServerError(null);
@@ -58,9 +64,7 @@ export default function RegisterPage() {
       navigate("/admin?bienvenue=1", { replace: true });
     } catch (err) {
       setServerError(
-        err instanceof ApiError
-          ? err.message
-          : "Inscription impossible pour l'instant.",
+        err instanceof ApiError ? err.message : t("auth.register.error"),
       );
     } finally {
       setLoading(false);
@@ -70,62 +74,78 @@ export default function RegisterPage() {
   return (
     <div className="auth-wrap">
       <div className="auth-card" style={{ maxWidth: 480 }}>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "flex-end",
+            marginBottom: 10,
+          }}
+        >
+          <LanguageSwitcher />
+        </div>
         <div className="auth-brand">
           <span className="logo-dot">📦</span>
           <div>
             <h1>StockMan</h1>
-            <small>Essai gratuit de 14 jours — sans engagement</small>
+            <small>{t("auth.register.tagline")}</small>
           </div>
         </div>
         <Card>
-          <h2 style={{ marginBottom: 14 }}>Créer ma boutique</h2>
+          <h2 style={{ marginBottom: 14 }}>{t("auth.register.title")}</h2>
           <form onSubmit={(e) => void submit(e)}>
             <Field
-              label="Nom de l'entreprise / boutique"
+              label={t("auth.register.shopName")}
               required
               error={errors.tenantName}
             >
               <Input
                 value={f.tenantName}
                 onChange={set("tenantName")}
-                placeholder="Ex. Dépôt Chez Maman Alice"
+                placeholder={t("auth.register.shopNamePlaceholder")}
               />
             </Field>
             <div className="form-row">
               <Field
-                label="Votre nom (gérant)"
+                label={t("auth.register.ownerName")}
                 required
                 error={errors.userName}
               >
                 <Input
                   value={f.userName}
                   onChange={set("userName")}
-                  placeholder="Ex. Alice Mbarga"
+                  placeholder={t("auth.register.ownerNamePlaceholder")}
                 />
               </Field>
-              <Field label="Téléphone (WhatsApp)" hint="Ex. +237 690 12 34 56">
+              <Field
+                label={t("auth.register.phone")}
+                hint={t("auth.register.phoneHint")}
+              >
                 <Input
                   value={f.phone}
                   onChange={set("phone")}
-                  placeholder="+237…"
+                  placeholder={t("auth.register.phonePlaceholder")}
                 />
               </Field>
             </div>
-            <Field label="Email de connexion" required error={errors.email}>
+            <Field
+              label={t("auth.register.email")}
+              required
+              error={errors.email}
+            >
               <Input
                 type="email"
                 value={f.email}
                 onChange={set("email")}
-                placeholder="vous@entreprise.cm"
+                placeholder={t("auth.emailPlaceholder")}
                 autoComplete="username"
               />
             </Field>
             <div className="form-row">
               <Field
-                label="Mot de passe"
+                label={t("auth.register.password")}
                 required
                 error={errors.password}
-                hint="8+ caractères, lettre + chiffre"
+                hint={t("auth.register.passwordHint")}
               >
                 <Input
                   type="password"
@@ -134,7 +154,11 @@ export default function RegisterPage() {
                   autoComplete="new-password"
                 />
               </Field>
-              <Field label="Confirmation" required error={errors.confirm}>
+              <Field
+                label={t("auth.register.confirm")}
+                required
+                error={errors.confirm}
+              >
                 <Input
                   type="password"
                   value={f.confirm}
@@ -152,12 +176,13 @@ export default function RegisterPage() {
               </p>
             ) : null}
             <Button block size="lg" type="submit" loading={loading}>
-              Démarrer mon essai gratuit
+              {t("auth.register.submit")}
             </Button>
           </form>
         </Card>
         <p className="auth-foot">
-          Déjà inscrit ? <Link to="/login">Se connecter</Link>
+          {t("auth.register.footerHas")}{" "}
+          <Link to="/login">{t("auth.register.footerLogin")}</Link>
         </p>
       </div>
     </div>

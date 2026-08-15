@@ -1,0 +1,301 @@
+{
+  "common": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "close": "Close",
+    "confirm": "Confirm",
+    "delete": "Delete",
+    "edit": "Edit",
+    "add": "Add",
+    "create": "Create",
+    "search": "Search…",
+    "loading": "Loading…",
+    "retry": "Retry",
+    "actions": "Actions",
+    "all": "All",
+    "allFeminine": "All",
+    "none": "—",
+    "yes": "Yes",
+    "no": "No",
+    "back": "Back",
+    "next": "Next",
+    "prev": "Prev.",
+    "previous": "Previous",
+    "page": "page",
+    "pageOf": "Page {{page}} of {{total}}",
+    "itemsCount": "{{count}} item(s)",
+    "pagination": "Pagination",
+    "loadingError": "Unable to load",
+    "licenseLocked": "Feature locked by the license",
+    "required": "required",
+    "optional": "optional",
+    "date": "Date",
+    "amount": "Amount",
+    "status": "Status",
+    "total": "Total",
+    "active": "Active",
+    "inactive": "Inactive",
+    "print": "Print",
+    "export": "CSV export",
+    "import": "CSV import",
+    "unknownError": "Something went wrong."
+  },
+  "fields": {
+    "name": "Name",
+    "phone": "Phone",
+    "email": "Email",
+    "address": "Address",
+    "notes": "Notes",
+    "city": "City",
+    "password": "Password",
+    "depot": "Depot",
+    "category": "Category",
+    "vendor": "Seller",
+    "customer": "Customer",
+    "supplier": "Supplier",
+    "product": "Product",
+    "quantity": "Quantity",
+    "unitPrice": "Unit price",
+    "reference": "Reference"
+  },
+  "shell": {
+    "nav": {
+      "main": "Main navigation",
+      "openMenu": "Open menu",
+      "dashboard": "Dashboard",
+      "sell": "Sell",
+      "pos": "Till (POS)",
+      "cashSessions": "Till sessions",
+      "invoices": "Invoices & credit notes",
+      "promotions": "Promotions",
+      "customers": "Customers & credit",
+      "quotes": "Quotes & proforma",
+      "purchaseOrders": "Supplier orders",
+      "catalog": "Catalog",
+      "products": "Products",
+      "categories": "Categories",
+      "units": "Units",
+      "stock": "Stock",
+      "depots": "Depots & transfers",
+      "receipts": "Goods receipts",
+      "inventory": "Stocktake",
+      "movements": "Movements",
+      "suppliers": "Suppliers",
+      "pilotage": "Management",
+      "sales": "Sales",
+      "team": "Team",
+      "reports": "Reports",
+      "notifications": "Notifications",
+      "configuration": "Configuration",
+      "settings": "Settings",
+      "subscription": "Subscription",
+      "auditLog": "Audit log",
+      "posVendor": "Till",
+      "myTill": "My till",
+      "mySales": "My sales",
+      "depotStock": "Depot stock",
+      "closing": "Day close (Z)",
+      "offlineSync": "Offline sync",
+      "saOverview": "Overview",
+      "saTenants": "Tenants",
+      "saLicenses": "Licenses",
+      "saPlans": "Plans",
+      "saConfigs": "Configurations",
+      "saSupervision": "Monitoring"
+    },
+    "brand": { "saConsole": "Publisher console" },
+    "roles": {
+      "superAdmin": "Super Admin",
+      "admin": "Manager",
+      "vendor": "Seller"
+    },
+    "logout": "Log out",
+    "offline": {
+      "offline": "Offline",
+      "offlineWithQueue": "Offline — {{count}} queued",
+      "syncing": "Syncing…",
+      "onlineWithQueue": "Online — {{count}} queued",
+      "online": "Online",
+      "syncedToast": "{{count}} offline sale(s) synced."
+    },
+    "bell": {
+      "aria": "Notifications ({{count}} unread)",
+      "title": "Notifications",
+      "markAllRead": "Mark all read",
+      "markAllReadToast": "Notifications marked as read.",
+      "empty": "No recent notification."
+    },
+    "license": {
+      "expiredTitle": "License expired on {{date}}.",
+      "expiredBody": "New operations (sales, stock) are blocked until the subscription is renewed.",
+      "trial": "Trial",
+      "subscription": "Subscription",
+      "daysLeft": "{{count}} day(s) left",
+      "endsOn": "(ends {{date}}).",
+      "viewSubscription": "View subscription →"
+    },
+    "impersonation": {
+      "active": "🛠️ Publisher support session active",
+      "actingAs": " — acting as {{name}} (actions are logged)",
+      "quit": "Leave",
+      "endedToast": "Support session ended."
+    },
+    "language": {
+      "label": "Language",
+      "french": "Français",
+      "english": "English"
+    }
+  },
+  "format": {
+    "relative": {
+      "justNow": "just now",
+      "minutes": "{{count}} min ago",
+      "hours": "{{count}} h ago",
+      "yesterday": "yesterday",
+      "days": "{{count}} d ago"
+    },
+    "stockStatus": {
+      "ok": "In stock",
+      "low": "Low stock",
+      "out": "Out of stock"
+    },
+    "payment": {
+      "CASH": "Cash",
+      "MTN_MOMO": "MTN MoMo",
+      "ORANGE_MONEY": "Orange Money"
+    },
+    "movement": {
+      "IN": "Goods in",
+      "OUT": "Goods out",
+      "TRANSFER": "Transfer",
+      "ADJUSTMENT": "Adjustment",
+      "SALE": "Sale",
+      "RETURN": "Return",
+      "DAMAGE": "Damage",
+      "EXPIRED": "Expiry",
+      "VOID": "Void"
+    },
+    "notification": {
+      "LOW_STOCK": "Low stock",
+      "EXPIRY": "Expiry",
+      "DAILY_REPORT": "Daily report",
+      "SYSTEM": "System",
+      "SYNC_FAILURE": "Sync failure"
+    }
+  },
+  "scan": {
+    "placeholder": "Scan or type a barcode…",
+    "ariaDefault": "Barcode scan field",
+    "lookupButton": "Look up this code",
+    "cameraButton": "Scan with the camera",
+    "searching": "Looking up code…",
+    "unknownCode": "Unknown code: “{{code}}”.",
+    "lookupError": "Lookup failed.",
+    "camera": {
+      "unavailable": "Scanner unavailable on this browser.",
+      "denied": "Camera not accessible: grant camera access, or use a USB scanner / typing.",
+      "videoAria": "Scanning camera feed",
+      "aim": "Aim at the product barcode…",
+      "starting": "Starting the camera…",
+      "close": "Close the scanner"
+    }
+  },
+  "gate": {
+    "title": "🔒 Open the till to start",
+    "body": "Management requires an open till session: your sales will be rejected until the till is opened (opening float counted)."
+  },
+  "csv": {
+    "export": "⬇️ CSV export",
+    "import": "⬆️ CSV import",
+    "exportError": "Export failed",
+    "importError": "Import failed",
+    "reportTitle": "Import report",
+    "successToast": "Import complete: {{created}} created, {{updated}} updated.",
+    "partialToast": "{{done}}/{{total}} rows imported, {{errors}} error(s).",
+    "reportSummary": "<b>{{created}}</b> created · <b>{{updated}}</b> updated · <b>{{errors}}</b> error(s) out of {{total}} rows.",
+    "lineLabel": "Row {{line}}",
+    "fixHint": "Fix those rows and re-upload the file (already-imported rows are updated, not duplicated)."
+  },
+  "auth": {
+    "language": "Language",
+    "emailPlaceholder": "you@company.cm",
+    "login": {
+      "pageTitle": "Sign in",
+      "tagline": "Depots, stock & till management",
+      "tabPassword": "🔑 Password",
+      "tabPin": "⚡ Till PIN",
+      "email": "Email",
+      "password": "Password",
+      "passwordPlaceholder": "••••••••",
+      "submit": "Sign in",
+      "forgot": "Forgot password?",
+      "pinHint": "Enter your PIN (4 to 6 digits)",
+      "erase": "Clear",
+      "validate": "Confirm",
+      "footerNew": "No account yet?",
+      "footerRegister": "Create my shop (14-day trial)",
+      "error": "Sign-in failed."
+    },
+    "register": {
+      "pageTitle": "Create my shop",
+      "tagline": "14-day free trial — no commitment",
+      "title": "Create my shop",
+      "shopName": "Company / shop name",
+      "shopNamePlaceholder": "E.g. Mama Alice Depot",
+      "shopNameError": "Company name is required.",
+      "ownerName": "Your name (manager)",
+      "ownerNamePlaceholder": "E.g. Alice Mbarga",
+      "ownerNameError": "Your name is required.",
+      "phone": "Phone (WhatsApp)",
+      "phoneHint": "E.g. +237 690 12 34 56",
+      "phonePlaceholder": "+237…",
+      "email": "Sign-in email",
+      "emailError": "Invalid email.",
+      "password": "Password",
+      "passwordHint": "8+ characters, letter + digit",
+      "pwTooShort": "8 characters minimum.",
+      "pwLetter": "At least one letter required.",
+      "pwDigit": "At least one digit required.",
+      "confirm": "Confirmation",
+      "confirmError": "Passwords do not match.",
+      "submit": "Start my free trial",
+      "footerHas": "Already registered?",
+      "footerLogin": "Sign in",
+      "error": "Registration unavailable right now."
+    },
+    "forgot": {
+      "pageTitle": "Forgot password",
+      "tagline": "Password reset",
+      "email": "Account email",
+      "submit": "Send the link",
+      "devNote": "(Development environment)",
+      "openLink": "Open the reset link",
+      "backToLogin": "← Back to sign-in",
+      "error": "Service unavailable."
+    },
+    "reset": {
+      "pageTitle": "New password",
+      "tagline": "Choose a new password",
+      "incomplete": "Incomplete link: the token is missing.",
+      "restart": "Start over",
+      "newPassword": "New password",
+      "confirm": "Confirmation",
+      "pwRule": "Password: 8+ characters with a letter and a digit.",
+      "mismatch": "Passwords do not match.",
+      "submit": "Reset",
+      "error": "Invalid or expired link."
+    }
+  },
+  "settings": {
+    "language": {
+      "title": "Interface language",
+      "body": "Language of menus, buttons and messages — as well as date and number formats.",
+      "hint": "This preference is stored on this device and applies instantly."
+    }
+  },
+  "errors": {
+    "NETWORK": "Network unavailable — check your connection.",
+    "SESSION": "Session expired — please sign in again.",
+    "OFFLINE": "Offline: the action will be retried when back online."
+  }
+}

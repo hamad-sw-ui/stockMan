@@ -1,12 +1,15 @@
-/** Mot de passe oublié : envoi d'un lien de réinitialisation (anti-énumération). */
+/** Mot de passe oublié : envoi d'un lien de réinitialisation
+ *  (anti-énumération). I1 : textes via i18n (clés « auth.forgot.* »). */
 import { useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { ApiError, post } from "../../lib/http";
 import { Button, Card, Field, Input } from "../../components/ui";
-import { usePageTitle } from "../../components/Shell";
+import { LanguageSwitcher, usePageTitle } from "../../components/Shell";
 
 export default function ForgotPasswordPage() {
-  usePageTitle("Mot de passe oublié");
+  const { t } = useTranslation();
+  usePageTitle(t("auth.forgot.pageTitle"));
   const [email, setEmail] = useState("");
   const [done, setDone] = useState<string | null>(null);
   const [devToken, setDevToken] = useState<string | null>(null);
@@ -25,7 +28,7 @@ export default function ForgotPasswordPage() {
       setDone(r.message);
       setDevToken(r.devToken ?? null);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Service indisponible.");
+      setError(err instanceof ApiError ? err.message : t("auth.forgot.error"));
     } finally {
       setLoading(false);
     }
@@ -34,11 +37,20 @@ export default function ForgotPasswordPage() {
   return (
     <div className="auth-wrap">
       <div className="auth-card">
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "flex-end",
+            marginBottom: 10,
+          }}
+        >
+          <LanguageSwitcher />
+        </div>
         <div className="auth-brand">
           <span className="logo-dot">📦</span>
           <div>
             <h1>StockMan</h1>
-            <small>Réinitialisation du mot de passe</small>
+            <small>{t("auth.forgot.tagline")}</small>
           </div>
         </div>
         <Card>
@@ -47,26 +59,26 @@ export default function ForgotPasswordPage() {
               <p role="status">{done}</p>
               {devToken ? (
                 <p style={{ fontSize: "0.88rem" }}>
-                  (Environnement de développement){" "}
+                  {t("auth.forgot.devNote")}{" "}
                   <Link
                     to={`/reinitialiser-mot-de-passe?token=${encodeURIComponent(devToken)}`}
                   >
-                    Ouvrir le lien de réinitialisation
+                    {t("auth.forgot.openLink")}
                   </Link>
                 </p>
               ) : null}
               <p>
-                <Link to="/login">← Retour à la connexion</Link>
+                <Link to="/login">{t("auth.forgot.backToLogin")}</Link>
               </p>
             </div>
           ) : (
             <form onSubmit={(e) => void submit(e)}>
-              <Field label="Email du compte" required>
+              <Field label={t("auth.forgot.email")} required>
                 <Input
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="vous@entreprise.cm"
+                  placeholder={t("auth.emailPlaceholder")}
                   autoFocus
                 />
               </Field>
@@ -79,10 +91,10 @@ export default function ForgotPasswordPage() {
                 </p>
               ) : null}
               <Button block type="submit" loading={loading}>
-                Envoyer le lien
+                {t("auth.forgot.submit")}
               </Button>
               <p style={{ textAlign: "center", marginTop: 12 }}>
-                <Link to="/login">← Retour à la connexion</Link>
+                <Link to="/login">{t("auth.forgot.backToLogin")}</Link>
               </p>
             </form>
           )}

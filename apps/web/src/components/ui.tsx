@@ -7,6 +7,7 @@ import {
   type SelectHTMLAttributes,
   type TextareaHTMLAttributes,
 } from "react";
+import { useTranslation } from "react-i18next";
 
 /* ---------------------------------- Bouton --------------------------------- */
 type BtnVariant = "primary" | "outline" | "danger" | "danger-soft" | "ghost";
@@ -128,7 +129,7 @@ export function Select({
 export function SearchInput({
   value,
   onChange,
-  placeholder = "Rechercher…",
+  placeholder,
   autoFocus,
 }: {
   value: string;
@@ -136,6 +137,8 @@ export function SearchInput({
   placeholder?: string;
   autoFocus?: boolean;
 }) {
+  const { t } = useTranslation();
+  const ph = placeholder ?? t("common.search");
   return (
     <div className="input-icon" style={{ flex: 1, minWidth: 180 }}>
       <span>🔎</span>
@@ -143,9 +146,9 @@ export function SearchInput({
         className="input"
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
+        placeholder={ph}
         autoFocus={autoFocus}
-        aria-label={placeholder}
+        aria-label={ph}
       />
     </div>
   );
@@ -243,28 +246,27 @@ export function Pagination({
   total: number;
   onPage: (p: number) => void;
 }) {
+  const { t } = useTranslation();
   if (totalPages <= 1) return null;
   return (
-    <nav className="pagination" aria-label="Pagination">
-      <span>{total} élément(s)</span>
+    <nav className="pagination" aria-label={t("common.pagination")}>
+      <span>{t("common.itemsCount", { count: total })}</span>
       <Button
         variant="outline"
         size="sm"
         disabled={page <= 1}
         onClick={() => onPage(page - 1)}
       >
-        ← Préc.
+        ← {t("common.prev")}
       </Button>
-      <span>
-        Page {page} / {totalPages}
-      </span>
+      <span>{t("common.pageOf", { page, total: totalPages })}</span>
       <Button
         variant="outline"
         size="sm"
         disabled={page >= totalPages}
         onClick={() => onPage(page + 1)}
       >
-        Suiv. →
+        {t("common.next")} →
       </Button>
     </nav>
   );
@@ -319,6 +321,7 @@ export function Modal({
   keep?: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  const { t } = useTranslation();
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
@@ -346,7 +349,7 @@ export function Modal({
           <button
             className="btn btn-ghost btn-sm"
             onClick={onClose}
-            aria-label="Fermer"
+            aria-label={t("common.close")}
           >
             ✕
           </button>
@@ -369,7 +372,7 @@ export function Modal({
 export function ConfirmModal({
   title,
   message,
-  confirmLabel = "Confirmer",
+  confirmLabel,
   danger = true,
   onConfirm,
   onClose,
@@ -383,6 +386,7 @@ export function ConfirmModal({
   onClose: () => void;
   loading?: boolean;
 }) {
+  const { t } = useTranslation();
   return (
     <Modal
       title={title}
@@ -391,14 +395,14 @@ export function ConfirmModal({
       footer={
         <>
           <Button variant="outline" onClick={onClose}>
-            Annuler
+            {t("common.cancel")}
           </Button>
           <Button
             variant={danger ? "danger" : "primary"}
             onClick={onConfirm}
             loading={loading}
           >
-            {confirmLabel}
+            {confirmLabel ?? t("common.confirm")}
           </Button>
         </>
       }
@@ -441,18 +445,19 @@ export function ErrorState({
   error: { message?: string; status?: number } | null;
   onRetry?: () => void;
 }) {
+  const { t } = useTranslation();
   return (
     <EmptyState
       emoji="⚠️"
       title={
         error?.status === 402
-          ? "Fonction verrouillée par la licence"
-          : "Chargement impossible"
+          ? t("common.licenseLocked")
+          : t("common.loadingError")
       }
       action={
         onRetry ? (
           <Button variant="outline" onClick={onRetry}>
-            Réessayer
+            {t("common.retry")}
           </Button>
         ) : undefined
       }

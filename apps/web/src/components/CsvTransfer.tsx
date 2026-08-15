@@ -3,8 +3,10 @@
  * Import (fichier → envoi brut → compte-rendu détaillé créés/mis à jour/
  * lignes refusées avec motif). Posé sur les pages Clients et Fournisseurs ;
  * miroir rigoureux de l'ergonomie historique de la page Produits.
+ * Textes via i18n (I1, clés « csv.* » ; le compte-rendu utilise <Trans>).
  */
 import { useRef, useState } from "react";
+import { Trans, useTranslation } from "react-i18next";
 import { download, upload } from "../lib/http";
 import { useToast } from "../store/toast";
 import { Button, Modal } from "./ui";
@@ -24,20 +26,21 @@ export function ExportCsvButton({
   filename: string;
 }) {
   const { show } = useToast();
+  const { t } = useTranslation();
   const [busy, setBusy] = useState(false);
   const act = async () => {
     setBusy(true);
     try {
       await download(endpoint, filename);
     } catch (e) {
-      show(e instanceof Error ? e.message : "Export impossible", "error");
+      show(e instanceof Error ? e.message : t("csv.exportError"), "error");
     } finally {
       setBusy(false);
     }
   };
   return (
     <Button variant="outline" size="sm" loading={busy} onClick={act}>
-      ⬇️ Export CSV
+      {t("csv.export")}
     </Button>
   );
 }
@@ -53,6 +56,7 @@ export function ImportCsvButton({
   onDone?: () => void;
 }) {
   const { show } = useToast();
+  const { t } = useTranslation();
   const fileRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [report, setReport] = useState<CsvImportReport | null>(null);
@@ -65,17 +69,21 @@ export function ImportCsvButton({
       setReport(r);
       if (r.errors.length === 0)
         show(
-          `Import terminé : ${r.created} créés, ${r.updated} mis à jour.`,
+          t("csv.successToast", { created: r.created, updated: r.updated }),
           "success",
         );
       else
         show(
-          `${r.created + r.updated}/${r.total} lignes importées, ${r.errors.length} erreur(s).`,
+          t("csv.partialToast", {
+            done: r.created + r.updated,
+            total: r.total,
+            errors: r.errors.length,
+          }),
           "error",
         );
       if (r.created + r.updated > 0) onDone?.();
     } catch (e) {
-      show(e instanceof Error ? e.message : "Import impossible", "error");
+      show(e instanceof Error ? e.message : t("csv.importError"), "error");
     } finally {
       setBusy(false);
       if (fileRef.current) fileRef.current.value = "";
@@ -91,7 +99,7 @@ export function ImportCsvButton({
         disabled={busy}
         onClick={() => fileRef.current?.click()}
       >
-        ⬆️ Import CSV
+        {t("csv.import")}
       </Button>
       <input
         ref={fileRef}
@@ -107,15 +115,23 @@ export function ImportCsvButton({
       />
       {report ? (
         <Modal
-          title="Compte-rendu de l'import"
+          title={t("csv.reportTitle")}
           onClose={() => setReport(null)}
-          footer={<Button onClick={() => setReport(null)}>Fermer</Button>}
+          footer={
+            <Button onClick={() => setReport(null)}>{t("common.close")}</Button>
+          }
         >
           <p style={{ marginTop: 0 }}>
-            <strong>{report.created}</strong> créés ·{" "}
-            <strong>{report.updated}</strong> mis à jour ·{" "}
-            <strong>{report.errors.length}</strong> erreur(s) sur {report.total}{" "}
-            lignes.
+            <Trans
+              i18nKey="csv.reportSummary"
+              values={{
+                created: report.created,
+                updated: report.updated,
+                errors: report.errors.length,
+                total: report.total,
+              }}
+              components={{ b: <strong /> }}
+            />
           </p>
           {report.errors.length > 0 ? (
             <div
@@ -130,13 +146,12 @@ export function ImportCsvButton({
             >
               {report.errors.map((e, i) => (
                 <p key={i} style={{ margin: "4px 0" }}>
-                  <strong>Ligne {e.ligne}</strong> — {e.message}
+                  <strong>{t("csv.lineLabel", { line: e.ligne })}</strong> —{" "}
+                  {e.message}
                 </p>
               ))}
               <p className="muted" style={{ marginBottom: 0 }}>
-                Corrigez les lignes concernées puis relancez le fichier (les
-                lignes déjà importées sont mises à jour, pas dupliquées).{" "}
-                {acceptNote}
+                {t("csv.fixHint")} {acceptNote}
               </p>
             </div>
           ) : null}

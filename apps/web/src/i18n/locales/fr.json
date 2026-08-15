@@ -1,0 +1,301 @@
+{
+  "common": {
+    "save": "Enregistrer",
+    "cancel": "Annuler",
+    "close": "Fermer",
+    "confirm": "Confirmer",
+    "delete": "Supprimer",
+    "edit": "Modifier",
+    "add": "Ajouter",
+    "create": "Créer",
+    "search": "Rechercher…",
+    "loading": "Chargement…",
+    "retry": "Réessayer",
+    "actions": "Actions",
+    "all": "Tous",
+    "allFeminine": "Toutes",
+    "none": "—",
+    "yes": "Oui",
+    "no": "Non",
+    "back": "Retour",
+    "next": "Suiv.",
+    "prev": "Préc.",
+    "previous": "Précédent",
+    "page": "page",
+    "pageOf": "Page {{page}} / {{total}}",
+    "itemsCount": "{{count}} élément(s)",
+    "pagination": "Pagination",
+    "loadingError": "Chargement impossible",
+    "licenseLocked": "Fonction verrouillée par la licence",
+    "required": "obligatoire",
+    "optional": "optionnel",
+    "date": "Date",
+    "amount": "Montant",
+    "status": "Statut",
+    "total": "Total",
+    "active": "Actif",
+    "inactive": "Inactif",
+    "print": "Imprimer",
+    "export": "Export CSV",
+    "import": "Import CSV",
+    "unknownError": "Une erreur est survenue."
+  },
+  "fields": {
+    "name": "Nom",
+    "phone": "Téléphone",
+    "email": "Email",
+    "address": "Adresse",
+    "notes": "Notes",
+    "city": "Ville",
+    "password": "Mot de passe",
+    "depot": "Dépôt",
+    "category": "Catégorie",
+    "vendor": "Vendeur",
+    "customer": "Client",
+    "supplier": "Fournisseur",
+    "product": "Produit",
+    "quantity": "Quantité",
+    "unitPrice": "Prix unitaire",
+    "reference": "Référence"
+  },
+  "shell": {
+    "nav": {
+      "main": "Navigation principale",
+      "openMenu": "Ouvrir le menu",
+      "dashboard": "Tableau de bord",
+      "sell": "Vendre",
+      "pos": "Caisse (POS)",
+      "cashSessions": "Sessions de caisse",
+      "invoices": "Factures & avoirs",
+      "promotions": "Promotions",
+      "customers": "Clients & crédit",
+      "quotes": "Devis & proforma",
+      "purchaseOrders": "Achats fournisseurs",
+      "catalog": "Catalogue",
+      "products": "Produits",
+      "categories": "Catégories",
+      "units": "Unités",
+      "stock": "Stock",
+      "depots": "Dépôts & transferts",
+      "receipts": "Réceptions",
+      "inventory": "Inventaire",
+      "movements": "Mouvements",
+      "suppliers": "Fournisseurs",
+      "pilotage": "Pilotage",
+      "sales": "Ventes",
+      "team": "Équipe",
+      "reports": "Rapports",
+      "notifications": "Notifications",
+      "configuration": "Configuration",
+      "settings": "Paramètres",
+      "subscription": "Abonnement",
+      "auditLog": "Journal d'audit",
+      "posVendor": "Caisse",
+      "myTill": "Ma caisse",
+      "mySales": "Mes ventes",
+      "depotStock": "Stock du dépôt",
+      "closing": "Clôture (Z)",
+      "offlineSync": "Synchro hors-ligne",
+      "saOverview": "Vue d'ensemble",
+      "saTenants": "Tenants",
+      "saLicenses": "Licences",
+      "saPlans": "Plans",
+      "saConfigs": "Configurations",
+      "saSupervision": "Supervision"
+    },
+    "brand": { "saConsole": "Console éditeur" },
+    "roles": {
+      "superAdmin": "Super Admin",
+      "admin": "Gérant",
+      "vendor": "Vendeur"
+    },
+    "logout": "Se déconnecter",
+    "offline": {
+      "offline": "Hors ligne",
+      "offlineWithQueue": "Hors ligne — {{count}} en file",
+      "syncing": "Synchronisation…",
+      "onlineWithQueue": "En ligne — {{count}} en file",
+      "online": "En ligne",
+      "syncedToast": "{{count}} vente(s) hors-ligne synchronisée(s)."
+    },
+    "bell": {
+      "aria": "Notifications ({{count}} non lues)",
+      "title": "Notifications",
+      "markAllRead": "Tout lire",
+      "markAllReadToast": "Notifications marquées comme lues.",
+      "empty": "Aucune notification récente."
+    },
+    "license": {
+      "expiredTitle": "Licence expirée le {{date}}.",
+      "expiredBody": "Les nouvelles opérations (ventes, stocks) sont bloquées tant que l'abonnement n'est pas renouvelé.",
+      "trial": "Essai",
+      "subscription": "Abonnement",
+      "daysLeft": "{{count}} jour(s) restant(s)",
+      "endsOn": "(fin le {{date}}).",
+      "viewSubscription": "Voir l'abonnement →"
+    },
+    "impersonation": {
+      "active": "🛠️ Session support éditeur active",
+      "actingAs": " — vous agissez en tant que {{name}} (actions journalisées)",
+      "quit": "Quitter",
+      "endedToast": "Session support terminée."
+    },
+    "language": {
+      "label": "Langue",
+      "french": "Français",
+      "english": "English"
+    }
+  },
+  "format": {
+    "relative": {
+      "justNow": "à l'instant",
+      "minutes": "il y a {{count}} min",
+      "hours": "il y a {{count}} h",
+      "yesterday": "hier",
+      "days": "il y a {{count}} j"
+    },
+    "stockStatus": {
+      "ok": "En stock",
+      "low": "Stock bas",
+      "out": "Rupture"
+    },
+    "payment": {
+      "CASH": "Espèces",
+      "MTN_MOMO": "MTN MoMo",
+      "ORANGE_MONEY": "Orange Money"
+    },
+    "movement": {
+      "IN": "Entrée",
+      "OUT": "Sortie",
+      "TRANSFER": "Transfert",
+      "ADJUSTMENT": "Ajustement",
+      "SALE": "Vente",
+      "RETURN": "Retour",
+      "DAMAGE": "Casse",
+      "EXPIRED": "Péremption",
+      "VOID": "Annulation"
+    },
+    "notification": {
+      "LOW_STOCK": "Stock bas",
+      "EXPIRY": "Péremption",
+      "DAILY_REPORT": "Rapport du jour",
+      "SYSTEM": "Système",
+      "SYNC_FAILURE": "Échec de synchro"
+    }
+  },
+  "scan": {
+    "placeholder": "Scanner ou saisir un code-barres…",
+    "ariaDefault": "Champ de scan code-barres",
+    "lookupButton": "Rechercher ce code",
+    "cameraButton": "Scanner avec la caméra",
+    "searching": "Recherche du code…",
+    "unknownCode": "Code inconnu : « {{code}} ».",
+    "lookupError": "Recherche impossible.",
+    "camera": {
+      "unavailable": "Scanner indisponible sur ce navigateur.",
+      "denied": "Caméra inaccessible : autorisez l’accès caméra, ou utilisez une douchette USB / la saisie.",
+      "videoAria": "Flux caméra de scan",
+      "aim": "Visez le code-barres du produit…",
+      "starting": "Activation de la caméra…",
+      "close": "Fermer le scanner"
+    }
+  },
+  "gate": {
+    "title": "🔒 Ouvrez la caisse pour commencer",
+    "body": "La direction exige une session de caisse ouverte : vos ventes seront refusées tant que la caisse n'est pas ouverte (fond de départ compté)."
+  },
+  "csv": {
+    "export": "⬇️ Export CSV",
+    "import": "⬆️ Import CSV",
+    "exportError": "Export impossible",
+    "importError": "Import impossible",
+    "reportTitle": "Compte-rendu de l'import",
+    "successToast": "Import terminé : {{created}} créés, {{updated}} mis à jour.",
+    "partialToast": "{{done}}/{{total}} lignes importées, {{errors}} erreur(s).",
+    "reportSummary": "<b>{{created}}</b> créés · <b>{{updated}}</b> mis à jour · <b>{{errors}}</b> erreur(s) sur {{total}} lignes.",
+    "lineLabel": "Ligne {{line}}",
+    "fixHint": "Corrigez les lignes concernées puis relancez le fichier (les lignes déjà importées sont mises à jour, pas dupliquées)."
+  },
+  "auth": {
+    "language": "Langue",
+    "emailPlaceholder": "vous@entreprise.cm",
+    "login": {
+      "pageTitle": "Connexion",
+      "tagline": "Gestion de dépôts, stock & caisse",
+      "tabPassword": "🔑 Mot de passe",
+      "tabPin": "⚡ PIN caisse",
+      "email": "Email",
+      "password": "Mot de passe",
+      "passwordPlaceholder": "••••••••",
+      "submit": "Se connecter",
+      "forgot": "Mot de passe oublié ?",
+      "pinHint": "Saisissez votre PIN (4 à 6 chiffres)",
+      "erase": "Effacer",
+      "validate": "Valider",
+      "footerNew": "Pas encore de compte ?",
+      "footerRegister": "Créer ma boutique (essai 14 jours)",
+      "error": "Connexion impossible."
+    },
+    "register": {
+      "pageTitle": "Créer ma boutique",
+      "tagline": "Essai gratuit de 14 jours — sans engagement",
+      "title": "Créer ma boutique",
+      "shopName": "Nom de l'entreprise / boutique",
+      "shopNamePlaceholder": "Ex. Dépôt Chez Maman Alice",
+      "shopNameError": "Nom d'entreprise requis.",
+      "ownerName": "Votre nom (gérant)",
+      "ownerNamePlaceholder": "Ex. Alice Mbarga",
+      "ownerNameError": "Votre nom est requis.",
+      "phone": "Téléphone (WhatsApp)",
+      "phoneHint": "Ex. +237 690 12 34 56",
+      "phonePlaceholder": "+237…",
+      "email": "Email de connexion",
+      "emailError": "Email invalide.",
+      "password": "Mot de passe",
+      "passwordHint": "8+ caractères, lettre + chiffre",
+      "pwTooShort": "8 caractères minimum.",
+      "pwLetter": "Au moins une lettre requise.",
+      "pwDigit": "Au moins un chiffre requis.",
+      "confirm": "Confirmation",
+      "confirmError": "Les mots de passe ne correspondent pas.",
+      "submit": "Démarrer mon essai gratuit",
+      "footerHas": "Déjà inscrit ?",
+      "footerLogin": "Se connecter",
+      "error": "Inscription impossible pour l'instant."
+    },
+    "forgot": {
+      "pageTitle": "Mot de passe oublié",
+      "tagline": "Réinitialisation du mot de passe",
+      "email": "Email du compte",
+      "submit": "Envoyer le lien",
+      "devNote": "(Environnement de développement)",
+      "openLink": "Ouvrir le lien de réinitialisation",
+      "backToLogin": "← Retour à la connexion",
+      "error": "Service indisponible."
+    },
+    "reset": {
+      "pageTitle": "Nouveau mot de passe",
+      "tagline": "Choisissez un nouveau mot de passe",
+      "incomplete": "Lien incomplet : le jeton est manquant.",
+      "restart": "Recommencer",
+      "newPassword": "Nouveau mot de passe",
+      "confirm": "Confirmation",
+      "pwRule": "Mot de passe : 8+ caractères avec lettre et chiffre.",
+      "mismatch": "Les mots de passe ne correspondent pas.",
+      "submit": "Réinitialiser",
+      "error": "Lien invalide ou expiré."
+    }
+  },
+  "settings": {
+    "language": {
+      "title": "Langue de l'interface / Interface language",
+      "body": "Langue des menus, boutons et messages — ainsi que des formats de dates et de nombres.",
+      "hint": "Ce choix est enregistré sur cet appareil et s'applique immédiatement."
+    }
+  },
+  "errors": {
+    "NETWORK": "Réseau indisponible — vérifiez votre connexion.",
+    "SESSION": "Session expirée — reconnectez-vous.",
+    "OFFLINE": "Hors-ligne : l'action sera réessayée à la reconnexion."
+  }
+}

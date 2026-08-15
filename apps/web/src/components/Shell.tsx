@@ -16,12 +16,15 @@ import {
   useLocation,
   useNavigate,
 } from "react-router-dom";
+import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 import { useAuth } from "../store/auth";
 import { useToast } from "../store/toast";
 import { formatDate, formatRelative } from "../lib/format";
 import { get, patch, post, refreshSession, type ApiError } from "../lib/http";
 import { countQueued } from "../lib/offline/outbox";
 import { onSyncComplete, syncOutbox } from "../lib/offline/sync";
+import { setLanguage, SUPPORTED, type SupportedLang } from "../i18n";
 import type { NotificationRow, Paged } from "../lib/types";
 
 /* ------------------------------ Hooks réseau ------------------------------- */
@@ -74,6 +77,7 @@ function OfflinePill() {
   const { queued, refresh } = useOutboxCount();
   const [syncing, setSyncing] = useState(false);
   const toast = useToast();
+  const { t } = useTranslation();
 
   useEffect(() => {
     if (online && queued > 0) {
@@ -81,7 +85,7 @@ function OfflinePill() {
       void syncOutbox()
         .then((r) => {
           if (r.synced > 0)
-            toast.success(`${r.synced} vente(s) hors-ligne synchronisée(s).`);
+            toast.success(t("shell.offline.syncedToast", { count: r.synced }));
         })
         .finally(() => {
           setSyncing(false);
@@ -93,12 +97,14 @@ function OfflinePill() {
 
   const cls = !online ? "off" : syncing ? "syncing" : "";
   const text = !online
-    ? `Hors ligne${queued > 0 ? ` — ${queued} en file` : ""}`
+    ? queued > 0
+      ? t("shell.offline.offlineWithQueue", { count: queued })
+      : t("shell.offline.offline")
     : syncing
-      ? "Synchronisation…"
+      ? t("shell.offline.syncing")
       : queued > 0
-        ? `En ligne — ${queued} en file`
-        : "En ligne";
+        ? t("shell.offline.onlineWithQueue", { count: queued })
+        : t("shell.offline.online");
   return (
     <span className={`offline-pill ${cls}`} title={text} aria-live="polite">
       <span className="pulse" />
@@ -114,6 +120,7 @@ function NotificationBell() {
   const [unread, setUnread] = useState(0);
   const ref = useRef<HTMLDivElement>(null);
   const toast = useToast();
+  const { t } = useTranslation();
 
   const load = useCallback(async () => {
     try {
@@ -145,7 +152,7 @@ function NotificationBell() {
   const markAll = async () => {
     try {
       await post("/notifications/read-all");
-      toast.success("Notifications marquées comme lues.");
+      toast.success(t("shell.bell.markAllReadToast"));
       void load();
     } catch (e) {
       toast.error((e as ApiError).message);
@@ -157,7 +164,7 @@ function NotificationBell() {
       <button
         className="icon-btn"
         onClick={() => setOpen((o) => !o)}
-        aria-label={`Notifications (${unread} non lues)`}
+        aria-label={t("shell.bell.aria", { count: unread })}
       >
         🔔
         {unread > 0 ? (
@@ -167,16 +174,16 @@ function NotificationBell() {
       {open ? (
         <div className="menu-pop" style={{ minWidth: 320 }}>
           <div className="row-between" style={{ padding: "4px 8px 8px" }}>
-            <strong>Notifications</strong>
+            <strong>{t("shell.bell.title")}</strong>
             {unread > 0 ? (
               <button className="link-btn" onClick={() => void markAll()}>
-                Tout lire
+                {t("shell.bell.markAllRead")}
               </button>
             ) : null}
           </div>
           {items.length === 0 ? (
             <p className="muted" style={{ padding: "4px 8px 10px" }}>
-              Aucune notification récente.
+              {t("shell.bell.empty")}
             </p>
           ) : (
             items.map((n) => (
@@ -230,82 +237,118 @@ interface NavGroup {
   items: NavItem[];
 }
 
-function adminNav(outbox: number): NavGroup[] {
+function adminNav(t: TFunction, outbox: number): NavGroup[] {
   return [
     {
-      items: [{ to: "/admin", label: "Tableau de bord", ico: "📊", end: true }],
+      items: [
+        {
+          to: "/admin",
+          label: t("shell.nav.dashboard"),
+          ico: "📊",
+          end: true,
+        },
+      ],
     },
     {
-      title: "Vendre",
+      title: t("shell.nav.sell"),
       items: [
         {
           to: "/admin/caisse",
-          label: "Caisse (POS)",
+          label: t("shell.nav.pos"),
           ico: "🧾",
           badge: outbox,
         },
         {
           to: "/admin/sessions-caisse",
-          label: "Sessions de caisse",
+          label: t("shell.nav.cashSessions"),
           ico: "💵",
         },
-        { to: "/admin/factures", label: "Factures & avoirs", ico: "🧾" },
-        { to: "/admin/promotions", label: "Promotions", ico: "🎁" },
-        { to: "/admin/clients", label: "Clients & crédit", ico: "🤝" },
-        { to: "/admin/devis", label: "Devis & proforma", ico: "📝" },
-        { to: "/admin/commandes", label: "Achats fournisseurs", ico: "📋" },
+        { to: "/admin/factures", label: t("shell.nav.invoices"), ico: "🧾" },
+        {
+          to: "/admin/promotions",
+          label: t("shell.nav.promotions"),
+          ico: "🎁",
+        },
+        { to: "/admin/clients", label: t("shell.nav.customers"), ico: "🤝" },
+        { to: "/admin/devis", label: t("shell.nav.quotes"), ico: "📝" },
+        {
+          to: "/admin/commandes",
+          label: t("shell.nav.purchaseOrders"),
+          ico: "📋",
+        },
       ],
     },
     {
-      title: "Catalogue",
+      title: t("shell.nav.catalog"),
       items: [
-        { to: "/admin/produits", label: "Produits", ico: "📦" },
-        { to: "/admin/categories", label: "Catégories", ico: "🏷️" },
-        { to: "/admin/unites", label: "Unités", ico: "📏" },
+        { to: "/admin/produits", label: t("shell.nav.products"), ico: "📦" },
+        {
+          to: "/admin/categories",
+          label: t("shell.nav.categories"),
+          ico: "🏷️",
+        },
+        { to: "/admin/unites", label: t("shell.nav.units"), ico: "📏" },
       ],
     },
     {
-      title: "Stock",
+      title: t("shell.nav.stock"),
       items: [
-        { to: "/admin/depots", label: "Dépôts & transferts", ico: "🏬" },
-        { to: "/admin/receptions", label: "Réceptions", ico: "📥" },
-        { to: "/admin/inventaire", label: "Inventaire", ico: "🧮" },
-        { to: "/admin/mouvements", label: "Mouvements", ico: "↔️" },
-        { to: "/admin/fournisseurs", label: "Fournisseurs", ico: "🚚" },
+        { to: "/admin/depots", label: t("shell.nav.depots"), ico: "🏬" },
+        { to: "/admin/receptions", label: t("shell.nav.receipts"), ico: "📥" },
+        { to: "/admin/inventaire", label: t("shell.nav.inventory"), ico: "🧮" },
+        { to: "/admin/mouvements", label: t("shell.nav.movements"), ico: "↔️" },
+        {
+          to: "/admin/fournisseurs",
+          label: t("shell.nav.suppliers"),
+          ico: "🚚",
+        },
       ],
     },
     {
-      title: "Pilotage",
+      title: t("shell.nav.pilotage"),
       items: [
-        { to: "/admin/ventes", label: "Ventes", ico: "💳" },
-        { to: "/admin/equipe", label: "Équipe", ico: "👥" },
-        { to: "/admin/rapports", label: "Rapports", ico: "📈" },
-        { to: "/admin/notifications", label: "Notifications", ico: "🔔" },
+        { to: "/admin/ventes", label: t("shell.nav.sales"), ico: "💳" },
+        { to: "/admin/equipe", label: t("shell.nav.team"), ico: "👥" },
+        { to: "/admin/rapports", label: t("shell.nav.reports"), ico: "📈" },
+        {
+          to: "/admin/notifications",
+          label: t("shell.nav.notifications"),
+          ico: "🔔",
+        },
       ],
     },
     {
-      title: "Configuration",
+      title: t("shell.nav.configuration"),
       items: [
-        { to: "/admin/parametres", label: "Paramètres", ico: "⚙️" },
-        { to: "/admin/abonnement", label: "Abonnement", ico: "💎" },
-        { to: "/admin/journal", label: "Journal d'audit", ico: "🛡️" },
+        { to: "/admin/parametres", label: t("shell.nav.settings"), ico: "⚙️" },
+        {
+          to: "/admin/abonnement",
+          label: t("shell.nav.subscription"),
+          ico: "💎",
+        },
+        { to: "/admin/journal", label: t("shell.nav.auditLog"), ico: "🛡️" },
       ],
     },
   ];
 }
 
-function vendorNav(outbox: number): NavGroup[] {
+function vendorNav(t: TFunction, outbox: number): NavGroup[] {
   return [
     {
       items: [
-        { to: "/caisse", label: "Caisse", ico: "🧾", end: true },
-        { to: "/caisse/session", label: "Ma caisse", ico: "💵" },
-        { to: "/caisse/mes-ventes", label: "Mes ventes", ico: "💳" },
-        { to: "/caisse/stock", label: "Stock du dépôt", ico: "📦" },
-        { to: "/caisse/cloture", label: "Clôture (Z)", ico: "🧮" },
+        {
+          to: "/caisse",
+          label: t("shell.nav.posVendor"),
+          ico: "🧾",
+          end: true,
+        },
+        { to: "/caisse/session", label: t("shell.nav.myTill"), ico: "💵" },
+        { to: "/caisse/mes-ventes", label: t("shell.nav.mySales"), ico: "💳" },
+        { to: "/caisse/stock", label: t("shell.nav.depotStock"), ico: "📦" },
+        { to: "/caisse/cloture", label: t("shell.nav.closing"), ico: "🧮" },
         {
           to: "/caisse/file",
-          label: "Synchro hors-ligne",
+          label: t("shell.nav.offlineSync"),
           ico: "🔄",
           badge: outbox,
         },
@@ -314,16 +357,20 @@ function vendorNav(outbox: number): NavGroup[] {
   ];
 }
 
-function saNav(): NavGroup[] {
+function saNav(t: TFunction): NavGroup[] {
   return [
     {
       items: [
-        { to: "/sa", label: "Vue d'ensemble", ico: "🌍", end: true },
-        { to: "/sa/tenants", label: "Tenants", ico: "🏢" },
-        { to: "/sa/licences", label: "Licences", ico: "📜" },
-        { to: "/sa/plans", label: "Plans", ico: "🧩" },
-        { to: "/sa/configs", label: "Configurations", ico: "🔐" },
-        { to: "/sa/supervision", label: "Supervision", ico: "🛰️" },
+        { to: "/sa", label: t("shell.nav.saOverview"), ico: "🌍", end: true },
+        { to: "/sa/tenants", label: t("shell.nav.saTenants"), ico: "🏢" },
+        { to: "/sa/licences", label: t("shell.nav.saLicenses"), ico: "📜" },
+        { to: "/sa/plans", label: t("shell.nav.saPlans"), ico: "🧩" },
+        { to: "/sa/configs", label: t("shell.nav.saConfigs"), ico: "🔐" },
+        {
+          to: "/sa/supervision",
+          label: t("shell.nav.saSupervision"),
+          ico: "🛰️",
+        },
       ],
     },
   ];
@@ -332,6 +379,7 @@ function saNav(): NavGroup[] {
 /* ------------------------------ Bannière licence ---------------------------- */
 function LicenseBanner() {
   const { user } = useAuth();
+  const { t } = useTranslation();
   if (!user || user.role !== "ADMIN" || !user.license) return null;
   const lic = user.license;
   const days = Math.ceil(
@@ -357,21 +405,26 @@ function LicenseBanner() {
       <div>
         {expired ? (
           <>
-            <strong>Licence expirée le {formatDate(lic.end_date)}.</strong> Les
-            nouvelles opérations (ventes, stocks) sont bloquées tant que
-            l&apos;abonnement n&apos;est pas renouvelé.
+            <strong>
+              {t("shell.license.expiredTitle", {
+                date: formatDate(lic.end_date),
+              })}
+            </strong>{" "}
+            {t("shell.license.expiredBody")}
           </>
         ) : (
           <>
             <strong>
-              {lic.status === "TRIAL" ? "Essai" : "Abonnement"} : {days} jour(s)
-              restant(s)
+              {lic.status === "TRIAL"
+                ? t("shell.license.trial")
+                : t("shell.license.subscription")}{" "}
+              : {t("shell.license.daysLeft", { count: days })}
             </strong>{" "}
-            (fin le {formatDate(lic.end_date)}).
+            {t("shell.license.endsOn", { date: formatDate(lic.end_date) })}
           </>
         )}{" "}
         <Link to="/admin/abonnement" style={{ fontWeight: 700 }}>
-          Voir l&apos;abonnement →
+          {t("shell.license.viewSubscription")}
         </Link>
       </div>
     </div>
@@ -379,6 +432,30 @@ function LicenseBanner() {
 }
 
 /* ------------------------------- Coquille ---------------------------------- */
+/** Sélecteur de langue (I1) — compact, posé dans la topbar. */
+export function LanguageSwitcher({ className = "" }: { className?: string }) {
+  const { t, i18n } = useTranslation();
+  const current: SupportedLang = i18n.language.startsWith("en") ? "en" : "fr";
+  return (
+    <select
+      className={`select ${className}`}
+      style={{ width: "auto", padding: "6px 9px", fontSize: "0.85rem" }}
+      value={current}
+      onChange={(e) => void setLanguage(e.target.value as SupportedLang)}
+      aria-label={t("shell.language.label")}
+      title={t("shell.language.label")}
+    >
+      {SUPPORTED.map((l) => (
+        <option key={l} value={l}>
+          {l === "fr"
+            ? t("shell.language.french")
+            : t("shell.language.english")}
+        </option>
+      ))}
+    </select>
+  );
+}
+
 export default function Shell({
   variant,
 }: {
@@ -390,24 +467,25 @@ export default function Shell({
   const navigate = useNavigate();
   const location = useLocation();
   const toast = useToast();
+  const { t } = useTranslation();
   const impersonating =
     sessionStorage.getItem("stockman.impersonating") === "1";
 
   const groups = useMemo(
     () =>
       variant === "sa"
-        ? saNav()
+        ? saNav(t)
         : variant === "vendor"
-          ? vendorNav(queued)
-          : adminNav(queued),
-    [variant, queued],
+          ? vendorNav(t, queued)
+          : adminNav(t, queued),
+    [variant, queued, t],
   );
   const roleLabel =
     user?.role === "SUPER_ADMIN"
-      ? "Super Admin"
+      ? t("shell.roles.superAdmin")
       : user?.role === "ADMIN"
-        ? "Gérant"
-        : "Vendeur";
+        ? t("shell.roles.admin")
+        : t("shell.roles.vendor");
 
   useEffect(() => {
     setNavOpen(false);
@@ -418,7 +496,7 @@ export default function Shell({
     const ok = await refreshSession();
     if (ok) {
       await refreshUser().catch(() => undefined);
-      toast.info("Session support terminée.");
+      toast.info(t("shell.impersonation.endedToast"));
       navigate("/sa");
     } else {
       await logout();
@@ -429,7 +507,7 @@ export default function Shell({
   return (
     <div className={`app-shell ${navOpen ? "nav-open" : ""}`}>
       <div className="nav-scrim" onClick={() => setNavOpen(false)} />
-      <aside className="sidebar" aria-label="Navigation principale">
+      <aside className="sidebar" aria-label={t("shell.nav.main")}>
         <div className="side-brand">
           <span className="logo-dot">
             {user?.tenant.logo ? (
@@ -450,7 +528,9 @@ export default function Shell({
           <div>
             StockMan
             <small>
-              {variant === "sa" ? "Console éditeur" : user?.tenant.name}
+              {variant === "sa"
+                ? t("shell.brand.saConsole")
+                : user?.tenant.name}
             </small>
           </div>
         </div>
@@ -501,8 +581,8 @@ export default function Shell({
               borderColor: "rgba(255,255,255,0.15)",
               color: "#cbd5e1",
             }}
-            title="Se déconnecter"
-            aria-label="Se déconnecter"
+            title={t("shell.logout")}
+            aria-label={t("shell.logout")}
             onClick={() => {
               void logout().then(() => navigate("/login"));
             }}
@@ -514,17 +594,15 @@ export default function Shell({
       <div className="main-col">
         {impersonating ? (
           <div className="impersonation-banner" role="alert">
-            🛠️ Session support éditeur active
-            {user
-              ? ` — vous agissez en tant que ${user.name} (actions journalisées)`
-              : ""}
+            {t("shell.impersonation.active")}
+            {user ? t("shell.impersonation.actingAs", { name: user.name }) : ""}
             .
             <button
               className="btn btn-sm"
               style={{ background: "rgba(255,255,255,0.14)", color: "#fff" }}
               onClick={() => void quitImpersonation()}
             >
-              Quitter
+              {t("shell.impersonation.quit")}
             </button>
           </div>
         ) : null}
@@ -532,12 +610,13 @@ export default function Shell({
           <button
             className="icon-btn burger"
             onClick={() => setNavOpen(true)}
-            aria-label="Ouvrir le menu"
+            aria-label={t("shell.nav.openMenu")}
           >
             ☰
           </button>
           <OfflinePill />
           <span className="spacer" />
+          <LanguageSwitcher />
           {variant !== "sa" ? <NotificationBell /> : null}
         </header>
         <main className={`page ${variant === "vendor" ? "page-wide" : ""}`}>
@@ -557,19 +636,20 @@ export function PageError({
   error: ApiError | null;
   retry?: () => void;
 }) {
+  const { t } = useTranslation();
   if (!error) return null;
   return (
     <div className="empty" role="alert">
       <span className="emoji">⚠️</span>
       <h3>
         {error.status === 402
-          ? "Fonction verrouillée par la licence"
-          : "Chargement impossible"}
+          ? t("common.licenseLocked")
+          : t("common.loadingError")}
       </h3>
       <p>{error.message}</p>
       {retry ? (
         <button className="btn btn-outline" onClick={retry}>
-          Réessayer
+          {t("common.retry")}
         </button>
       ) : null}
     </div>

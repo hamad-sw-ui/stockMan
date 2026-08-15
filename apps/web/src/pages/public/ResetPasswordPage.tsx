@@ -1,12 +1,15 @@
-/** Réinitialisation du mot de passe via jeton (lien email). */
+/** Réinitialisation du mot de passe via jeton (lien email).
+ *  I1 : textes via i18n (clés « auth.reset.* ») + sélecteur de langue. */
 import { useState, type FormEvent } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import { ApiError, post } from "../../lib/http";
 import { Button, Card, Field, Input } from "../../components/ui";
-import { usePageTitle } from "../../components/Shell";
+import { LanguageSwitcher, usePageTitle } from "../../components/Shell";
 
 export default function ResetPasswordPage() {
-  usePageTitle("Nouveau mot de passe");
+  const { t } = useTranslation();
+  usePageTitle(t("auth.reset.pageTitle"));
   const [params] = useSearchParams();
   const token = params.get("token") ?? "";
   const navigate = useNavigate();
@@ -18,11 +21,11 @@ export default function ResetPasswordPage() {
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     if (pw.length < 8 || !/[a-zA-Z]/.test(pw) || !/[0-9]/.test(pw)) {
-      setError("Mot de passe : 8+ caractères avec lettre et chiffre.");
+      setError(t("auth.reset.pwRule"));
       return;
     }
     if (pw !== confirm) {
-      setError("Les mots de passe ne correspondent pas.");
+      setError(t("auth.reset.mismatch"));
       return;
     }
     setError(null);
@@ -31,9 +34,7 @@ export default function ResetPasswordPage() {
       await post("/auth/reset-password", { token, newPassword: pw });
       navigate("/login?reinitialise=1", { replace: true });
     } catch (err) {
-      setError(
-        err instanceof ApiError ? err.message : "Lien invalide ou expiré.",
-      );
+      setError(err instanceof ApiError ? err.message : t("auth.reset.error"));
     } finally {
       setLoading(false);
     }
@@ -42,22 +43,31 @@ export default function ResetPasswordPage() {
   return (
     <div className="auth-wrap">
       <div className="auth-card">
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "flex-end",
+            marginBottom: 10,
+          }}
+        >
+          <LanguageSwitcher />
+        </div>
         <div className="auth-brand">
           <span className="logo-dot">📦</span>
           <div>
             <h1>StockMan</h1>
-            <small>Choisissez un nouveau mot de passe</small>
+            <small>{t("auth.reset.tagline")}</small>
           </div>
         </div>
         <Card>
           {!token ? (
             <p role="alert">
-              Lien incomplet : le jeton est manquant.{" "}
-              <Link to="/mot-de-passe-oublie">Recommencer</Link>.
+              {t("auth.reset.incomplete")}{" "}
+              <Link to="/mot-de-passe-oublie">{t("auth.reset.restart")}</Link>.
             </p>
           ) : (
             <form onSubmit={(e) => void submit(e)}>
-              <Field label="Nouveau mot de passe" required>
+              <Field label={t("auth.reset.newPassword")} required>
                 <Input
                   type="password"
                   value={pw}
@@ -66,7 +76,7 @@ export default function ResetPasswordPage() {
                   autoFocus
                 />
               </Field>
-              <Field label="Confirmation" required>
+              <Field label={t("auth.reset.confirm")} required>
                 <Input
                   type="password"
                   value={confirm}
@@ -83,7 +93,7 @@ export default function ResetPasswordPage() {
                 </p>
               ) : null}
               <Button block type="submit" loading={loading}>
-                Réinitialiser
+                {t("auth.reset.submit")}
               </Button>
             </form>
           )}

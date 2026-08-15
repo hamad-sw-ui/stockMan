@@ -1,6 +1,7 @@
 /** Paramètres du tenant : profil entreprise (logo, couleur, devise, fuseau),
  *  alertes SMS/WhatsApp et sécurité du compte courant (mot de passe, PIN). */
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   Button,
   Card,
@@ -12,6 +13,7 @@ import {
   Spinner,
   Tabs,
 } from "../../components/ui";
+import { LanguageSwitcher } from "../../components/Shell";
 import { download, patch, post, put } from "../../lib/http";
 import { invalidateQueries, useQuery } from "../../lib/query";
 import { useAuth } from "../../store/auth";
@@ -253,10 +255,30 @@ function CompanyTab() {
           </Button>
         </div>
       </Card>
+      <LanguageCard />
       <CashPrefsCard />
       <WeightedBarcodeCard />
       <BackupRestoreCard />
     </>
+  );
+}
+
+/* --------------------------- Langue de l'interface (I1) ------------------- */
+/** Bascule FR/EN persistée sur l'appareil (même sélecteur que la topbar). */
+function LanguageCard() {
+  const { t } = useTranslation();
+  return (
+    <Card title={t("settings.language.title")}>
+      <p className="muted" style={{ marginTop: 0 }}>
+        {t("settings.language.body")}
+      </p>
+      <div className="row" style={{ alignItems: "center" }}>
+        <LanguageSwitcher />
+        <span className="muted" style={{ fontSize: "0.85rem" }}>
+          {t("settings.language.hint")}
+        </span>
+      </div>
+    </Card>
   );
 }
 

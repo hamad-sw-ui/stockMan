@@ -7,6 +7,7 @@
  * pas affiché : la douchette USB et la saisie restent le chemin universel.
  */
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 interface DetectedCode {
   rawValue?: string;
@@ -45,6 +46,7 @@ export function CameraScanner({
   const videoRef = useRef<HTMLVideoElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
+  const { t } = useTranslation();
 
   useEffect(() => {
     let stream: MediaStream | null = null;
@@ -53,7 +55,7 @@ export function CameraScanner({
     let fired = false;
     const Ctor = window.BarcodeDetector;
     if (!Ctor) {
-      setError("Scanner indisponible sur ce navigateur.");
+      setError(t("scan.camera.unavailable"));
       return undefined;
     }
     const detector = new Ctor({
@@ -102,9 +104,7 @@ export function CameraScanner({
         };
         raf = requestAnimationFrame(() => void tick());
       } catch {
-        setError(
-          "Caméra inaccessible : autorisez l’accès caméra, ou utilisez une douchette USB / la saisie.",
-        );
+        setError(t("scan.camera.denied"));
       }
     })();
 
@@ -129,13 +129,11 @@ export function CameraScanner({
             className="scanner-video"
             muted
             playsInline
-            aria-label="Flux caméra de scan"
+            aria-label={t("scan.camera.videoAria")}
           />
           <div className="scanner-reticle" aria-hidden />
           <p className="muted" style={{ textAlign: "center", marginTop: 8 }}>
-            {ready
-              ? "Visez le code-barres du produit…"
-              : "Activation de la caméra…"}
+            {ready ? t("scan.camera.aim") : t("scan.camera.starting")}
           </p>
         </>
       )}
@@ -145,7 +143,7 @@ export function CameraScanner({
         style={{ marginTop: 8, width: "100%" }}
         onClick={onClose}
       >
-        Fermer le scanner
+        {t("scan.camera.close")}
       </button>
     </div>
   );

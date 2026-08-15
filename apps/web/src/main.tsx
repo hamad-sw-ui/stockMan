@@ -7,6 +7,7 @@ import App from "./App";
 import { AuthProvider } from "./store/auth";
 import { ToastProvider } from "./store/toast";
 import { installAutoSync } from "./lib/offline/sync";
+import "./i18n"; // I1 — initialise FR/EN avant le premier rendu
 import "./styles/global.css";
 
 // Rejeu automatique des ventes hors-ligne (online, visibilité, intervalle).
