@@ -1,0 +1,28 @@
+{
+  "name": "stockman",
+  "version": "2.0.0",
+  "private": true,
+  "description": "StockMan — SaaS multi-tenant de gestion de dépôts, stock et caisse (Cameroun CEMAC).",
+  "workspaces": [
+    "apps/api",
+    "apps/web"
+  ],
+  "scripts": {
+    "dev:api": "npm run dev --workspace apps/api",
+    "dev:web": "npm run dev --workspace apps/web",
+    "build": "npm run build --workspaces",
+    "test": "npm run test --workspaces",
+    "typecheck": "npm run typecheck --workspaces",
+    "lint": "npm run lint --workspaces --if-present",
+    "format": "prettier --write \"**/*.{ts,tsx,js,json,md,css}\" --ignore-path .gitignore",
+    "migrate": "npm run migrate --workspace apps/api",
+    "seed:dev": "npm run seed:dev --workspace apps/api"
+  },
+  "engines": {
+    "node": ">=20",
+    "npm": ">=10"
+  },
+  "devDependencies": {
+    "prettier": "^3.3.3"
+  }
+}
