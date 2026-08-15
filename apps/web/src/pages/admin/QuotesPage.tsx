@@ -686,7 +686,7 @@ function QuoteDetailModal({
                 <td
                   className="num"
                   style={{ fontWeight: 700 }}
-                  data-label="Total"
+                  data-label={t("common.total")}
                 >
                   {formatMoney(it.total_price)}
                 </td>
@@ -698,7 +698,7 @@ function QuoteDetailModal({
                 style={{ fontWeight: 700 }}
                 data-label={t("common.total")}
               >
-                TOTAL
+                {t("pages.quotes.totalCaps")}
               </td>
               <td
                 className="num"

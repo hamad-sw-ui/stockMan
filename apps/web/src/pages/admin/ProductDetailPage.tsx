@@ -848,7 +848,7 @@ export default function ProductDetailPage() {
                 }
               />
             </Field>
-            <Field label="Code-barres">
+            <Field label={t("fields.barcode")}>
               <Input
                 value={variantForm.barcode}
                 onChange={(e) =>
@@ -1387,7 +1387,7 @@ function PriceHistoryTab({ productId }: { productId: string }) {
     <Card title={t("pages.productDetail.priceHistoryTitle")} pad={false}>
       {q.loading ? (
         <div style={{ padding: 18 }}>
-          <Spinner label="Chargement…" />
+          <Spinner label={t("common.loading")} />
         </div>
       ) : !q.data?.data.length ? (
         <div style={{ padding: 18 }}>
@@ -1464,7 +1464,7 @@ function SerialsTab({ productId }: { productId: string }) {
     <Card title={t("pages.productDetail.serialsTitle")} pad={false}>
       {q.loading ? (
         <div style={{ padding: 18 }}>
-          <Spinner label="Chargement…" />
+          <Spinner label={t("common.loading")} />
         </div>
       ) : !q.data?.rows.length ? (
         <div style={{ padding: 18 }}>

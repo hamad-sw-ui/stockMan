@@ -414,6 +414,8 @@ export default function SaleDetailPage() {
       ) : null}
 
       {receipt ? (
+        /* Reçu imprimé — hors champ i18n v1 : ticket FR légal
+           (TOTAL / Paiement / remerciement). */
         <div className="receipt-print">
           <div className="center" style={{ fontWeight: 800 }}>
             {receipt.tenant.name}

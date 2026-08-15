@@ -74,7 +74,8 @@
     "user": "User",
     "reason": "Reason",
     "barcode": "Barcode",
-    "payment": "Payment"
+    "payment": "Payment",
+    "barcodeAria": "Barcode {{code}}"
   },
   "shell": {
     "nav": {
@@ -314,9 +315,12 @@
     }
   },
   "errors": {
-    "NETWORK": "Network unavailable — check your connection.",
+    "NETWORK": "Connection failed. Check your network.",
     "SESSION": "Session expired — please sign in again.",
-    "OFFLINE": "Offline: the action will be retried when back online."
+    "OFFLINE": "Offline: the action will be retried when back online.",
+    "SESSION_EXPIRED": "Session expired. Please sign in again.",
+    "generic": "Error {{status}}",
+    "download": "Download failed ({{status}})."
   },
   "pages": {
     "stock": {
@@ -1108,7 +1112,8 @@
       "title": "Quotes & proforma",
       "validSuffix": " · Valid until {{date}}",
       "validUntilField": "Valid until",
-      "variantInfo": "↳ variant: {{name}}"
+      "variantInfo": "↳ variant: {{name}}",
+      "totalCaps": "Total"
     },
     "purchaseOrders": {
       "actionRefused": "Action denied",
@@ -2044,6 +2049,11 @@
       "serialNoneInStock": "No number recorded in stock for this product.",
       "serialAllPicked": "All available numbers are already selected.",
       "serialOfflineNote": "📴 Offline: type the numbers manually — they will be checked automatically at sync time."
+    },
+    "notFound": {
+      "title": "Page not found",
+      "body": "The link is incorrect or the page has been moved.",
+      "backHome": "Back to home"
     }
   },
   "licenseStatus": {
@@ -2051,5 +2061,32 @@
     "EXPIRED": "Expired",
     "SUSPENDED": "Suspended",
     "TRIAL": "Trial"
+  },
+  "charts": {
+    "noData": "No data.",
+    "noDataPeriod": "No data for this period.",
+    "salesTrendAria": "Sales trend",
+    "barChartAria": "Bar chart",
+    "distributionAria": "Breakdown"
+  },
+  "labelsPrint": {
+    "title": "Print labels",
+    "none": "— none —",
+    "qtyAria": "Number of labels for {{name}}",
+    "skippedWarning": "⚠ {{count}} line(s) without a barcode will be skipped ({{names}}).",
+    "templateLegend": "Template",
+    "showPrice": "Price incl. VAT",
+    "showShop": "Shop name",
+    "preview": "Preview — {{count}} label(s) will be printed",
+    "previewTruncated": " (first {{max}} shown)",
+    "emptyPreview": "No labels: adjust the quantities or fill in barcodes.",
+    "downloadZpl": "⬇ Download the .zpl",
+    "printCount": "🖨 Print · {{count}} label(s)",
+    "zplToast": ".zpl file downloaded — copy it to the printer (USB/network, see runbook).",
+    "template": {
+      "a4-grid": "A4 sheet (grid)",
+      "50x30": "Thermal 50 × 30 mm",
+      "38x25": "Thermal 38 × 25 mm"
+    }
   }
 }

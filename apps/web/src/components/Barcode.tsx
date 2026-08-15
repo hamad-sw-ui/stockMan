@@ -3,6 +3,7 @@
  *  Code 39 sinon. */
 import { useMemo } from "react";
 import { code39Bars, ean13Bars, isValidEan13 } from "../lib/barcode";
+import { i18n } from "../i18n";
 
 export function BarcodeSvg({
   value,
@@ -31,7 +32,7 @@ export function BarcodeSvg({
       width="100%"
       preserveAspectRatio="xMidYMid meet"
       role="img"
-      aria-label={`Code-barres ${label}`}
+      aria-label={i18n.t("fields.barcodeAria", { code: label })}
       className={className}
       style={{ display: "block", maxWidth: 260, margin: "0 auto" }}
     >

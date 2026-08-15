@@ -195,6 +195,8 @@ export default function PaymentsPage() {
       ) : null}
 
       {receipt ? (
+        /* Reçu imprimé — hors champ i18n v1 : ticket FR légal
+           (TOTAL / Paiement / remerciement). */
         <div className="receipt-print" aria-hidden={false}>
           <div className="center" style={{ fontWeight: 800, fontSize: "1rem" }}>
             {receipt.tenant.name}

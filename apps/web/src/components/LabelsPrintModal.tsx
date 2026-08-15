@@ -11,6 +11,7 @@
  * les étiquettes doivent donc vivre hors de l'arbre du shell.
  */
 import { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { createPortal } from "react-dom";
 import { BarcodeSvg } from "./Barcode";
 import { Button, Modal } from "./ui";
@@ -19,6 +20,7 @@ import {
   expandLabels,
   LABEL_TEMPLATES,
   labelSymbology,
+  labelTemplateLabel,
   templateById,
   type LabelLine,
   type LabelTemplateId,
@@ -62,7 +64,7 @@ export function LabelsPrintModal({
   lines,
   shopName,
   depotName = null,
-  title = "Imprimer les étiquettes",
+  title,
   onClose,
 }: {
   lines: LabelLine[];
@@ -71,6 +73,7 @@ export function LabelsPrintModal({
   title?: string;
   onClose: () => void;
 }) {
+  const { t } = useTranslation();
   const { show } = useToast();
   const [qtys, setQtys] = useState<Record<string, number>>(() =>
     Object.fromEntries(lines.map((l) => [l.key, l.qty])),
@@ -105,22 +108,19 @@ export function LabelsPrintModal({
         { template: template === "a4-grid" ? "50x30" : template, shop },
       ),
     );
-    show(
-      "Fichier .zpl téléchargé — copiez-le vers l'imprimante (USB/réseau, voir runbook).",
-      "success",
-    );
+    show(t("labelsPrint.zplToast"), "success");
   };
 
   return (
-    <Modal title={title} onClose={onClose} wide>
+    <Modal title={title ?? t("labelsPrint.title")} onClose={onClose} wide>
       {/* Lignes et quantités */}
       <div style={{ maxHeight: 200, overflowY: "auto", marginBottom: 10 }}>
         <table className="table">
           <thead>
             <tr>
-              <th>Produit</th>
-              <th>Code-barres</th>
-              <th style={{ width: 110 }}>Quantité</th>
+              <th>{t("fields.product")}</th>
+              <th>{t("fields.barcode")}</th>
+              <th style={{ width: 110 }}>{t("fields.quantity")}</th>
             </tr>
           </thead>
           <tbody>
@@ -128,7 +128,9 @@ export function LabelsPrintModal({
               <tr key={l.key}>
                 <td>{l.name}</td>
                 <td className="mono" style={{ fontSize: 12 }}>
-                  {l.code ?? <span className="muted">— aucun —</span>}
+                  {l.code ?? (
+                    <span className="muted">{t("labelsPrint.none")}</span>
+                  )}
                 </td>
                 <td>
                   <input
@@ -143,7 +145,7 @@ export function LabelsPrintModal({
                         [l.key]: Number(e.target.value),
                       }))
                     }
-                    aria-label={`Quantité d'étiquettes pour ${l.name}`}
+                    aria-label={t("labelsPrint.qtyAria", { name: l.name })}
                   />
                 </td>
               </tr>
@@ -154,8 +156,10 @@ export function LabelsPrintModal({
 
       {skipped.length > 0 ? (
         <p role="note" style={{ color: "#b45309", fontSize: 13 }}>
-          ⚠ {skipped.length} ligne(s) sans code-barres seront ignorées (
-          {skipped.map((s) => s.name).join(", ")}).
+          {t("labelsPrint.skippedWarning", {
+            count: skipped.length,
+            names: skipped.map((s) => s.name).join(", "),
+          })}
         </p>
       ) : null}
 
@@ -166,18 +170,19 @@ export function LabelsPrintModal({
       >
         <fieldset style={{ border: "none", padding: 0, margin: 0 }}>
           <legend className="muted" style={{ fontSize: 12 }}>
-            Gabarit
+            {t("labelsPrint.templateLegend")}
           </legend>
           <div className="row" style={{ gap: 10 }}>
-            {LABEL_TEMPLATES.map((t) => (
-              <label key={t.id} className="row" style={{ gap: 4 }}>
+            {LABEL_TEMPLATES.map((tmpl) => (
+              <label key={tmpl.id} className="row" style={{ gap: 4 }}>
                 <input
                   type="radio"
                   name="label-tpl"
-                  checked={template === t.id}
-                  onChange={() => setTemplate(t.id)}
+                  checked={template === tmpl.id}
+                  onChange={() => setTemplate(tmpl.id)}
                 />
-                {t.label}
+                {/* Gabarits : libellés constants FR en repli (helper i18n). */}
+                {labelTemplateLabel(tmpl)}
               </label>
             ))}
           </div>
@@ -188,7 +193,7 @@ export function LabelsPrintModal({
             checked={showPrice}
             onChange={(e) => setShowPrice(e.target.checked)}
           />
-          Prix TTC
+          {t("labelsPrint.showPrice")}
         </label>
         {shopName ? (
           <label className="row" style={{ gap: 4 }}>
@@ -197,7 +202,7 @@ export function LabelsPrintModal({
               checked={showShop}
               onChange={(e) => setShowShop(e.target.checked)}
             />
-            Enseigne
+            {t("labelsPrint.showShop")}
           </label>
         ) : null}
         {depotName ? (
@@ -207,15 +212,18 @@ export function LabelsPrintModal({
               checked={showDepot}
               onChange={(e) => setShowDepot(e.target.checked)}
             />
-            Dépôt
+            {t("fields.depot")}
           </label>
         ) : null}
       </div>
 
       {/* Aperçu écran (12 premières) */}
       <p className="muted" style={{ fontSize: 12, margin: "0 0 6px" }}>
-        Aperçu — {expanded.length} étiquette(s) sera imprimée(s)
-        {expanded.length > PREVIEW_MAX ? ` (12 premières affichées)` : ""}.
+        {t("labelsPrint.preview", { count: expanded.length })}
+        {expanded.length > PREVIEW_MAX
+          ? t("labelsPrint.previewTruncated", { max: PREVIEW_MAX })
+          : ""}
+        .
       </p>
       <div className="labels-preview">
         {expanded.slice(0, PREVIEW_MAX).map((e) => (
@@ -232,7 +240,7 @@ export function LabelsPrintModal({
         ))}
         {expanded.length === 0 ? (
           <p className="muted" style={{ fontSize: 13 }}>
-            Aucune étiquette : ajustez les quantités ou renseignez des codes.
+            {t("labelsPrint.emptyPreview")}
           </p>
         ) : null}
       </div>
@@ -242,7 +250,7 @@ export function LabelsPrintModal({
         style={{ justifyContent: "flex-end", gap: 8, marginTop: 14 }}
       >
         <Button variant="outline" onClick={onClose}>
-          Fermer
+          {t("common.close")}
         </Button>
         {tpl.zpl ? (
           <Button
@@ -250,11 +258,11 @@ export function LabelsPrintModal({
             onClick={doZpl}
             disabled={expanded.length === 0}
           >
-            ⬇ Télécharger le .zpl
+            {t("labelsPrint.downloadZpl")}
           </Button>
         ) : null}
         <Button onClick={() => window.print()} disabled={expanded.length === 0}>
-          🖨 Imprimer · {expanded.length} étiquette(s)
+          {t("labelsPrint.printCount", { count: expanded.length })}
         </Button>
       </div>
 

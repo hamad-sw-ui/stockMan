@@ -10,6 +10,7 @@ import {
 import Shell from "./components/Shell";
 import { Spinner } from "./components/ui";
 import { useAuth, type Role } from "./store/auth";
+import { useTranslation } from "react-i18next";
 import type { ReactNode } from "react";
 
 // Pages publiques
@@ -132,6 +133,7 @@ function PublicOnly({ children }: { children: ReactNode }) {
 }
 
 function NotFound() {
+  const { t } = useTranslation();
   return (
     <div
       className="center"
@@ -140,10 +142,10 @@ function NotFound() {
       <span style={{ fontSize: "3rem" }} aria-hidden>
         🧭
       </span>
-      <h1>Page introuvable</h1>
-      <p className="muted">Le lien est incorrect ou la page a été déplacée.</p>
+      <h1>{t("pages.notFound.title")}</h1>
+      <p className="muted">{t("pages.notFound.body")}</p>
       <a className="btn btn-primary" href="/">
-        Retour à l’accueil
+        {t("pages.notFound.backHome")}
       </a>
     </div>
   );

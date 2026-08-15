@@ -74,7 +74,8 @@
     "user": "Utilisateur",
     "reason": "Motif",
     "barcode": "Code-barres",
-    "payment": "Paiement"
+    "payment": "Paiement",
+    "barcodeAria": "Code-barres {{code}}"
   },
   "shell": {
     "nav": {
@@ -314,9 +315,12 @@
     }
   },
   "errors": {
-    "NETWORK": "Réseau indisponible — vérifiez votre connexion.",
+    "NETWORK": "Connexion impossible. Vérifiez votre réseau.",
     "SESSION": "Session expirée — reconnectez-vous.",
-    "OFFLINE": "Hors-ligne : l'action sera réessayée à la reconnexion."
+    "OFFLINE": "Hors-ligne : l'action sera réessayée à la reconnexion.",
+    "SESSION_EXPIRED": "Session expirée. Reconnectez-vous.",
+    "generic": "Erreur {{status}}",
+    "download": "Téléchargement impossible ({{status}})."
   },
   "pages": {
     "stock": {
@@ -1108,7 +1112,8 @@
       "title": "Devis & proforma",
       "validSuffix": " · Valide jusqu'au {{date}}",
       "validUntilField": "Valide jusqu'au",
-      "variantInfo": "↳ variante : {{name}}"
+      "variantInfo": "↳ variante : {{name}}",
+      "totalCaps": "TOTAL"
     },
     "purchaseOrders": {
       "actionRefused": "Action refusée",
@@ -2044,6 +2049,11 @@
       "serialNoneInStock": "Aucun numéro enregistré en stock pour ce produit.",
       "serialAllPicked": "Tous les numéros disponibles sont déjà sélectionnés.",
       "serialOfflineNote": "📴 Hors-ligne : saisissez les numéros à la main — ils seront vérifiés automatiquement lors de la synchronisation."
+    },
+    "notFound": {
+      "title": "Page introuvable",
+      "body": "Le lien est incorrect ou la page a été déplacée.",
+      "backHome": "Retour à l’accueil"
     }
   },
   "licenseStatus": {
@@ -2051,5 +2061,32 @@
     "EXPIRED": "Expirée",
     "SUSPENDED": "Suspendue",
     "TRIAL": "Essai"
+  },
+  "charts": {
+    "noData": "Aucune donnée.",
+    "noDataPeriod": "Aucune donnée sur la période.",
+    "salesTrendAria": "Évolution des ventes",
+    "barChartAria": "Graphique en barres",
+    "distributionAria": "Répartition"
+  },
+  "labelsPrint": {
+    "title": "Imprimer les étiquettes",
+    "none": "— aucun —",
+    "qtyAria": "Quantité d'étiquettes pour {{name}}",
+    "skippedWarning": "⚠ {{count}} ligne(s) sans code-barres seront ignorées ({{names}}).",
+    "templateLegend": "Gabarit",
+    "showPrice": "Prix TTC",
+    "showShop": "Enseigne",
+    "preview": "Aperçu — {{count}} étiquette(s) sera imprimée(s)",
+    "previewTruncated": " ({{max}} premières affichées)",
+    "emptyPreview": "Aucune étiquette : ajustez les quantités ou renseignez des codes.",
+    "downloadZpl": "⬇ Télécharger le .zpl",
+    "printCount": "🖨 Imprimer · {{count}} étiquette(s)",
+    "zplToast": "Fichier .zpl téléchargé — copiez-le vers l'imprimante (USB/réseau, voir runbook).",
+    "template": {
+      "a4-grid": "Planche A4 (grille)",
+      "50x30": "Thermique 50 × 30 mm",
+      "38x25": "Thermique 38 × 25 mm"
+    }
   }
 }

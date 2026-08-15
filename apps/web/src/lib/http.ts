@@ -1,8 +1,17 @@
 /** Client HTTP unique : jeton d'accès en mémoire, rafraîchissement silencieux
  *  (cookie httpOnly) avec file d'attente single-flight, erreurs typées. */
+import { i18n } from "../i18n";
 
 const API_BASE =
   (import.meta.env.VITE_API_BASE as string | undefined) ?? "/api";
+
+/** Pont code d'erreur → libellé localisé : si `errors.<CODE>` existe dans la
+ *  langue courante on l'utilise ; sinon on conserve le message du serveur
+ *  (le contrat API reste francophone en v1 — repli serveur documenté). */
+export function translateApiError(code: string, serverMessage: string): string {
+  const key = `errors.${code}`;
+  return i18n.exists(key) ? i18n.t(key) : serverMessage;
+}
 
 export class ApiError extends Error {
   constructor(
@@ -94,7 +103,10 @@ export async function apiFetch<T = unknown>(
     throw new ApiError(
       0,
       "NETWORK",
-      "Connexion impossible. Vérifiez votre réseau.",
+      translateApiError(
+        "NETWORK",
+        "Connexion impossible. Vérifiez votre réseau.",
+      ),
     );
   }
 
@@ -105,7 +117,10 @@ export async function apiFetch<T = unknown>(
     throw new ApiError(
       401,
       "SESSION_EXPIRED",
-      "Session expirée. Reconnectez-vous.",
+      translateApiError(
+        "SESSION_EXPIRED",
+        "Session expirée. Reconnectez-vous.",
+      ),
     );
   }
 
@@ -119,10 +134,14 @@ export async function apiFetch<T = unknown>(
       message?: string;
       details?: unknown;
     };
+    const code = err.code ?? "ERROR";
     throw new ApiError(
       res.status,
-      err.code ?? "ERROR",
-      err.message ?? `Erreur ${res.status}`,
+      code,
+      translateApiError(
+        code,
+        err.message ?? i18n.t("errors.generic", { status: res.status }),
+      ),
       err.details,
     );
   }
@@ -172,7 +191,10 @@ export async function upload<T = unknown>(
     throw new ApiError(
       0,
       "NETWORK",
-      "Connexion impossible. Vérifiez votre réseau.",
+      translateApiError(
+        "NETWORK",
+        "Connexion impossible. Vérifiez votre réseau.",
+      ),
     );
   }
   if (res.status === 401 && (await refreshSession())) res = await doFetch();
@@ -180,10 +202,14 @@ export async function upload<T = unknown>(
   const data = body ? (JSON.parse(body) as Record<string, unknown>) : {};
   if (!res.ok) {
     const err = (data.error ?? {}) as { code?: string; message?: string };
+    const code = err.code ?? "ERROR";
     throw new ApiError(
       res.status,
-      err.code ?? "ERROR",
-      err.message ?? `Erreur ${res.status}`,
+      code,
+      translateApiError(
+        code,
+        err.message ?? i18n.t("errors.generic", { status: res.status }),
+      ),
     );
   }
   return data as T;
@@ -196,7 +222,7 @@ export async function download(path: string, filename: string): Promise<void> {
     throw new ApiError(
       res.status,
       "DOWNLOAD",
-      `Téléchargement impossible (${res.status}).`,
+      i18n.t("errors.download", { status: res.status }),
     );
   const blob = await res.blob();
   const url = URL.createObjectURL(blob);

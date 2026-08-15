@@ -1,6 +1,7 @@
 /** Graphiques SVG autonomes (aucune dépendance externe — maîtrise totale des
  *  assets, cf. FRN-02). Ligne/zone, barres verticales et anneau avec légende. */
 import { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { formatMoney, formatQty } from "../lib/format";
 
 /* ------------------------------ Courbe (zone) ------------------------------ */
@@ -13,6 +14,7 @@ export function LineChart({
   height?: number;
   formatValue?: (v: number) => string;
 }) {
+  const { t } = useTranslation();
   const [hover, setHover] = useState<number | null>(null);
   const W = 640;
   const H = height;
@@ -42,7 +44,7 @@ export function LineChart({
   }, [points, H]);
 
   if (points.length === 0)
-    return <p className="muted">Aucune donnée sur la période.</p>;
+    return <p className="muted">{t("charts.noDataPeriod")}</p>;
 
   const top = hover != null ? dots[hover] : null;
   return (
@@ -51,7 +53,7 @@ export function LineChart({
         viewBox={`0 0 ${W} ${H}`}
         className="chart"
         role="img"
-        aria-label="Évolution des ventes"
+        aria-label={t("charts.salesTrendAria")}
       >
         {gridY.map((y, i) => (
           <g key={i}>
@@ -130,6 +132,7 @@ export function BarChart({
   formatValue?: (v: number) => string;
   color?: string;
 }) {
+  const { t } = useTranslation();
   const W = 640;
   const H = height;
   const PAD = { t: 18, r: 10, b: 26, l: 44 };
@@ -137,13 +140,13 @@ export function BarChart({
   const iw = W - PAD.l - PAD.r;
   const ih = H - PAD.t - PAD.b;
   const bw = bars.length ? Math.min(46, (iw / bars.length) * 0.62) : 20;
-  if (bars.length === 0) return <p className="muted">Aucune donnée.</p>;
+  if (bars.length === 0) return <p className="muted">{t("charts.noData")}</p>;
   return (
     <svg
       viewBox={`0 0 ${W} ${H}`}
       className="chart"
       role="img"
-      aria-label="Graphique en barres"
+      aria-label={t("charts.barChartAria")}
     >
       {[0.5, 1].map((f) => (
         <g key={f}>
@@ -222,13 +225,14 @@ export function Donut({
   segments: Array<{ label: string; value: number; color?: string }>;
   formatValue?: (v: number) => string;
 }) {
+  const { t } = useTranslation();
   const total = segments.reduce((a, s) => a + s.value, 0);
   const R = 54;
   const CX = 62;
   const CY = 62;
   const circumference = 2 * Math.PI * R;
   let offset = 0;
-  if (total <= 0) return <p className="muted">Aucune donnée.</p>;
+  if (total <= 0) return <p className="muted">{t("charts.noData")}</p>;
   return (
     <div className="row" style={{ alignItems: "center", gap: 20 }}>
       <svg
@@ -236,7 +240,7 @@ export function Donut({
         className="chart"
         style={{ maxWidth: 150 }}
         role="img"
-        aria-label="Répartition"
+        aria-label={t("charts.distributionAria")}
       >
         <circle
           cx={CX}

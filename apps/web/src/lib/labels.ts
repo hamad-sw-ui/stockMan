@@ -4,6 +4,7 @@
  * automatique de symbologie. Aucune dépendance au DOM (testable vitest).
  */
 import { isValidEan13 } from "./barcode";
+import { i18n } from "../i18n";
 
 export type LabelTemplateId = "a4-grid" | "50x30" | "38x25";
 
@@ -42,6 +43,13 @@ export const LABEL_TEMPLATES: LabelTemplate[] = [
 
 export const templateById = (id: LabelTemplateId): LabelTemplate =>
   LABEL_TEMPLATES.find((t) => t.id === id)!;
+
+/** Libellé localisé d'un gabarit — repli sur le libellé FR constant si la
+ *  clé i18n est absente (contrat : les données techniques restent en place). */
+export function labelTemplateLabel(tpl: LabelTemplate): string {
+  const key = `labelsPrint.template.${tpl.id}`;
+  return i18n.exists(key) ? i18n.t(key) : tpl.label;
+}
 
 /** Une ligne à étiqueter : code requis pour imprimer (sinon la ligne saute). */
 export interface LabelLine {

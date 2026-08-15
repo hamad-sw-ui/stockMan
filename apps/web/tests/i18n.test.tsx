@@ -24,6 +24,7 @@ import {
   formatRelative,
   stockStatusLabel,
 } from "../src/lib/format";
+import { translateApiError } from "../src/lib/http";
 
 /** Liste aplatie des clés feuilles (ex. « shell.nav.products »). */
 function flattenKeys(obj: Record<string, unknown>, prefix = ""): string[] {
@@ -109,6 +110,46 @@ describe("i18n — bascule de langue", () => {
     expect(globalThis.localStorage.getItem(LANG_STORAGE_KEY)).toBe("en");
     await setLanguage("fr");
     expect(globalThis.localStorage.getItem(LANG_STORAGE_KEY)).toBe("fr");
+  });
+});
+
+describe("i18n — pont des erreurs API (translateApiError)", () => {
+  it("les erreurs locales suivent la langue courante (FR à l'identique)", async () => {
+    expect(translateApiError("NETWORK", "repli")).toBe(
+      "Connexion impossible. Vérifiez votre réseau.",
+    );
+    expect(translateApiError("SESSION_EXPIRED", "repli")).toBe(
+      "Session expirée. Reconnectez-vous.",
+    );
+    await i18n.changeLanguage("en");
+    expect(translateApiError("NETWORK", "fallback")).toBe(
+      "Connection failed. Check your network.",
+    );
+    expect(translateApiError("SESSION_EXPIRED", "fallback")).toBe(
+      "Session expired. Please sign in again.",
+    );
+  });
+
+  it("repli sur le message serveur pour un code inconnu", async () => {
+    expect(translateApiError("CODE_INCONNU", "Message du serveur")).toBe(
+      "Message du serveur",
+    );
+    await i18n.changeLanguage("en");
+    expect(translateApiError("CODE_INCONNU", "Message du serveur")).toBe(
+      "Message du serveur",
+    );
+  });
+
+  it("les messages de repli internes interpolent le statut HTTP", async () => {
+    expect(i18n.t("errors.generic", { status: 500 })).toBe("Erreur 500");
+    expect(i18n.t("errors.download", { status: 403 })).toBe(
+      "Téléchargement impossible (403).",
+    );
+    await i18n.changeLanguage("en");
+    expect(i18n.t("errors.generic", { status: 500 })).toBe("Error 500");
+    expect(i18n.t("errors.download", { status: 403 })).toBe(
+      "Download failed (403).",
+    );
   });
 });
 

@@ -1406,6 +1406,7 @@ function SaleSuccess({ sold, onNew }: { sold: SoldState; onNew: () => void }) {
           {formatDateTime(sold.at)}
         </p>
 
+        {/* Reçu imprimé — hors champ i18n v1 : ticket FR légal (TOTAL). */}
         <div className="receipt-print" style={{ margin: "14px auto 0" }}>
           <div className="sep" />
           {sold.lines.map((l, i) => (
