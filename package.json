@@ -19,7 +19,7 @@
     "seed:dev": "npm run seed:dev --workspace apps/api"
   },
   "engines": {
-    "node": ">=20",
+    "node": "^20.19.0 || >=22.12.0",
     "npm": ">=10"
   },
   "devDependencies": {

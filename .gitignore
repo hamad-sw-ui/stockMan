@@ -9,6 +9,7 @@ build/
 .vscode/
 .idea/
 *.tmp
+*.tsbuildinfo
 coverage/
 public/sw.js.map
 backups/
