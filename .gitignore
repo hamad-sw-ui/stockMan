@@ -1,9 +1,14 @@
 node_modules/
-*.log
-.env
 dist/
 build/
+*.log
+.env
+.env.*
+!.env.example
 .DS_Store
 .vscode/
 .idea/
 *.tmp
+coverage/
+public/sw.js.map
+backups/

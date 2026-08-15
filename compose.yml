@@ -1,0 +1,50 @@
+# Environnement local complet : Postgres + API + Web
+# Usage : docker compose up --build   (puis http://localhost:8080)
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: stockman
+      POSTGRES_PASSWORD: stockman
+      POSTGRES_DB: stockman
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U stockman -d stockman"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    environment:
+      NODE_ENV: production
+      PORT: 5000
+      DATABASE_URL: postgresql://stockman:stockman@db:5432/stockman
+      JWT_SECRET: ${JWT_SECRET:?définir JWT_SECRET dans .env}
+      REFRESH_SECRET: ${REFRESH_SECRET:?définir REFRESH_SECRET dans .env}
+      CORS_ORIGIN: http://localhost:8080
+      NOTIF_DRIVER: mock
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "5000:5000"
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    depends_on:
+      - api
+    ports:
+      - "8080:80"
+    restart: unless-stopped
+
+volumes:
+  pgdata:
