@@ -1611,6 +1611,13 @@ table.table {
   .page {
     padding: 12px 10px;
   }
+  /* R2 — la hauteur de la topbar devient variable (wrap) : la barre
+     d'outils de caisse ne doit plus être ancrée à un offset fixe. */
+  .pos-toolbar {
+    position: static;
+    top: 0;
+    padding-top: 2px;
+  }
   .tabs {
     overflow-x: auto;
     flex-wrap: nowrap;
@@ -1636,12 +1643,22 @@ table.table {
 .filters-row .input-icon .input {
   width: 100%;
 }
+.filters-row > .field {
+  flex: 1 1 150px;
+  min-width: 0;
+}
 @media screen and (max-width: 640px) {
   .filters-row {
     gap: 8px;
   }
   .filters-row .btn {
     flex: 1 1 auto;
+  }
+  /* R2 — formulaires et barres de filtres : chaque champ prend toute la
+     largeur (1 colonne) sur téléphone. Bureau inchangé. */
+  .row > .field {
+    flex: 1 1 100%;
+    min-width: 0;
   }
 }
 
@@ -1701,6 +1718,212 @@ table.table {
   }
   h1 {
     font-size: 1.15rem;
+  }
+  /* R2 — grille produits de caisse : tuiles resserrées mais ≥ 104 px. */
+  .pos-grid {
+    grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+  }
+  .product-tile {
+    min-height: 84px;
+    padding: 10px 8px;
+  }
+}
+
+/* ============================================================
+   R2 — Listes denses → cartes empilées (≤ 760 px) & POS mobile
+   ------------------------------------------------------------
+   Pattern purement additif : une liste porte la classe
+   `.table-cards` sur son conteneur `.table-wrap` et chaque cellule
+   un attribut `data-label="…"`. À ≤ 760 px, l'en-tête disparaît et
+   chaque ligne devient une carte « libellé : valeur ». Aucune
+   logique métier n'est modifiée — seuls classe + attributs.
+   ============================================================ */
+@media screen and (max-width: 760px) {
+  .table-wrap.table-cards {
+    border: 0;
+    background: transparent;
+    overflow-x: visible; /* plus de défilement horizontal */
+    padding: 10px 10px 0; /* respiration dans la carte parente */
+  }
+  .table-cards table {
+    display: block;
+  }
+  .table-cards thead {
+    display: none;
+  }
+  .table-cards tbody {
+    display: block;
+  }
+  .table-cards tbody tr {
+    display: block;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 8px 14px;
+    margin-bottom: 10px;
+  }
+  /* Ligne complétive d'une carte-ligne (éditeur IMEI…) — pas de cadre. */
+  .table-cards tbody tr.check-stray {
+    display: flex;
+    border: 0;
+    padding: 0;
+    background: transparent;
+  }
+  .table-cards tbody tr.check-stray td {
+    padding-top: 2px;
+    border-bottom: 0;
+  }
+  .table-cards tbody tr.check-stray td::before {
+    display: none;
+  }
+  .table-cards tbody tr:hover {
+    background: var(--surface);
+  }
+  .table-cards td {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 4px 14px;
+    padding: 6px 0;
+    border-bottom: 1px dashed var(--border);
+    text-align: right;
+  }
+  .table-cards td > :first-child {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .table-cards td:last-child {
+    border-bottom: 0;
+  }
+  .table-cards td::before {
+    content: attr(data-label);
+    flex: none;
+    font-size: 0.78rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--ink-3);
+    text-align: left;
+  }
+  /* Cellules sans libellé (cases à cocher, actions) : pleine largeur. */
+  .table-cards td[data-label=""]::before {
+    display: none;
+  }
+  .table-cards td.col-actions,
+  .table-cards td[data-label=""] {
+    justify-content: flex-end;
+    text-align: right;
+  }
+  /* Les alignements « .num » restent à droite, la valeur en face du libellé. */
+  .table-cards td.num {
+    text-align: right;
+  }
+  .table-cards td > * {
+    min-width: 0;
+  }
+  /* Grilles d'édition : champs empilés — entrées pleine largeur. */
+  .table-cards td select,
+  .table-cards td input:not([type="checkbox"]) {
+    width: 100%;
+  }
+  .table-cards td input[type="checkbox"] {
+    width: 17px;
+    height: 17px;
+    flex-shrink: 0;
+  }
+}
+
+/* --- POS ≤ 480 px : panier en panneau bas repliable ----------------------
+   Structure (classes additives dans PosPage, logique inchangée) :
+   <aside class="pos-cart pos-bar open?">
+     <button class="pos-bar-toggle">   ← invisible ≥ 481 px
+       🧾 Panier <span class="pos-cart-count">n article(s)</span>
+       <span class="pos-bar-total money">total</span> ⌃
+     </button>
+     <div class="pos-bar-body"> … lignes + total + encaissement … </div> */
+.pos-bar-toggle {
+  display: none;
+}
+@media screen and (max-width: 480px) {
+  .pos-wrap {
+    display: block;
+  }
+  .pos-catalog {
+    max-width: 100%;
+    padding-bottom: 84px; /* dégage la barre panier fixe */
+  }
+  .pos-bar {
+    position: fixed;
+    left: 10px;
+    right: 10px;
+    bottom: 10px;
+    z-index: 40;
+    max-height: 62vh;
+    margin: 0;
+    border-radius: 18px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    box-shadow: 0 18px 42px rgba(12, 16, 22, 0.28);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  /* Barre-poignée : seule zone visible quand le panier est replié. */
+  .pos-bar-toggle {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 13px 14px;
+    background: none;
+    border: 0;
+    font: inherit;
+    font-weight: 700;
+    color: var(--ink);
+    cursor: pointer;
+    min-height: 54px;
+    text-align: left;
+  }
+  .pos-cart-count {
+    background: var(--primary);
+    color: #fff;
+    border-radius: 999px;
+    font-size: 0.76rem;
+    font-weight: 700;
+    padding: 2px 9px;
+    white-space: nowrap;
+  }
+  .pos-bar-toggle .pos-bar-total {
+    margin-left: auto;
+    font-size: 1.04rem;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+  }
+  .pos-bar:not(.open) .pos-bar-body {
+    display: none;
+  }
+  .pos-bar-body {
+    flex: 1;
+    overflow-y: auto;
+    border-top: 1px solid var(--border);
+    padding: 6px 12px 14px;
+  }
+  .pos-bar .empty-block {
+    text-align: center;
+    padding: 18px 6px 4px;
+  }
+  .pos-bar .empty-block h3 {
+    font-size: 1rem;
+  }
+  /* Actions du panier (paiement) en grille pouce-friendly. */
+  .pos-bar .pos-bar-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .pos-bar .pos-bar-actions .btn {
+    width: 100%;
   }
 }
 

@@ -235,7 +235,7 @@ function OrdersTab() {
         />
       ) : (
         <Card pad={false}>
-          <div className="table-wrap">
+          <div className="table-wrap table-cards">
             <table>
               <thead>
                 <tr>
@@ -257,15 +257,23 @@ function OrdersTab() {
                     (r.status === "SENT" || r.status === "PARTIALLY_RECEIVED");
                   return (
                     <tr key={r.id}>
-                      <td className="muted">{formatDate(r.created_at)}</td>
-                      <td style={{ fontWeight: 600 }}>{r.supplier_name}</td>
-                      <td className="muted">{r.depot_name}</td>
-                      <td className="num">{r.line_count ?? 0}</td>
-                      <td className="num">
+                      <td className="muted" data-label="Créée le">
+                        {formatDate(r.created_at)}
+                      </td>
+                      <td style={{ fontWeight: 600 }} data-label="Fournisseur">
+                        {r.supplier_name}
+                      </td>
+                      <td className="muted" data-label="Dépôt">
+                        {r.depot_name}
+                      </td>
+                      <td className="num" data-label="Lignes">
+                        {r.line_count ?? 0}
+                      </td>
+                      <td className="num" data-label="Réceptionné">
                         {formatQty(r.received_total ?? 0)} /{" "}
                         {formatQty(r.ordered_total ?? 0)}
                       </td>
-                      <td className="muted">
+                      <td className="muted" data-label="Prévue le">
                         {r.expected_at ? formatDate(r.expected_at) : "—"}
                         {late ? (
                           <>
@@ -274,12 +282,12 @@ function OrdersTab() {
                           </>
                         ) : null}
                       </td>
-                      <td>
+                      <td data-label="Statut">
                         <Badge tone={PO_STATUS[r.status].tone}>
                           {PO_STATUS[r.status].label}
                         </Badge>
                       </td>
-                      <td>
+                      <td data-label="" className="col-actions">
                         <Button
                           variant="ghost"
                           size="sm"
@@ -714,7 +722,7 @@ function PoDetailModal({
         />
       </div>
 
-      <div className="table-wrap">
+      <div className="table-wrap table-cards">
         <table>
           <thead>
             <tr>
@@ -728,16 +736,21 @@ function PoDetailModal({
           <tbody>
             {detail.items.map((it) => (
               <tr key={it.id}>
-                <td>
+                <td data-label="Produit">
                   {it.product_name}
                   {it.variant_name ? (
                     <span className="muted"> · {it.variant_name}</span>
                   ) : null}
                 </td>
-                <td className="num">{formatQty(it.quantity)}</td>
-                <td className="num">{formatQty(it.received_qty)}</td>
+                <td className="num" data-label="Commandé">
+                  {formatQty(it.quantity)}
+                </td>
+                <td className="num" data-label="Reçu">
+                  {formatQty(it.received_qty)}
+                </td>
                 <td
                   className="num"
+                  data-label="Reliquat"
                   style={{
                     fontWeight: 700,
                     color: it.remaining_qty > 0 ? "var(--warn)" : "var(--ok)",
@@ -745,7 +758,9 @@ function PoDetailModal({
                 >
                   {formatQty(it.remaining_qty)}
                 </td>
-                <td className="num muted">{formatMoney(it.unit_cost)}</td>
+                <td className="num muted" data-label="Coût unit.">
+                  {formatMoney(it.unit_cost)}
+                </td>
               </tr>
             ))}
           </tbody>
@@ -1008,7 +1023,7 @@ function ReturnsTab() {
         <EmptyState emoji="↩️" title="Aucun retour fournisseur" />
       ) : (
         <Card pad={false}>
-          <div className="table-wrap">
+          <div className="table-wrap table-cards">
             <table>
               <thead>
                 <tr>
@@ -1023,19 +1038,29 @@ function ReturnsTab() {
               <tbody>
                 {rows.map((r) => (
                   <tr key={r.id}>
-                    <td className="muted">{formatDateTime(r.created_at)}</td>
-                    <td style={{ fontWeight: 600 }}>{r.supplier_name}</td>
-                    <td>
+                    <td className="muted" data-label="Date">
+                      {formatDateTime(r.created_at)}
+                    </td>
+                    <td style={{ fontWeight: 600 }} data-label="Fournisseur">
+                      {r.supplier_name}
+                    </td>
+                    <td data-label="Motif">
                       <Badge tone="warn">
                         {RETURN_REASONS.find((x) => x.id === r.reason)?.label ??
                           r.reason}
                       </Badge>
                     </td>
-                    <td className="num">{r.line_count}</td>
-                    <td className="num" style={{ fontWeight: 700 }}>
+                    <td className="num" data-label="Lignes">
+                      {r.line_count}
+                    </td>
+                    <td
+                      className="num"
+                      style={{ fontWeight: 700 }}
+                      data-label="Avoir"
+                    >
                       {formatMoney(r.total_cost)}
                     </td>
-                    <td>
+                    <td data-label="" className="col-actions">
                       <Button
                         variant="ghost"
                         size="sm"
@@ -1083,7 +1108,7 @@ function ReturnsTab() {
             {RETURN_REASONS.find((x) => x.id === detail.reason)?.label ??
               detail.reason}
           </p>
-          <div className="table-wrap">
+          <div className="table-wrap table-cards">
             <table>
               <thead>
                 <tr>
@@ -1097,25 +1122,43 @@ function ReturnsTab() {
               <tbody>
                 {detail.items.map((it) => (
                   <tr key={it.id}>
-                    <td>
+                    <td data-label="Produit">
                       {it.product_name}
                       {it.variant_name ? (
                         <span className="muted"> · {it.variant_name}</span>
                       ) : null}
                     </td>
-                    <td className="mono muted">{it.batch_number ?? "—"}</td>
-                    <td className="num">{formatQty(it.quantity)}</td>
-                    <td className="num muted">{formatMoney(it.unit_cost)}</td>
-                    <td className="num" style={{ fontWeight: 700 }}>
+                    <td className="mono muted" data-label="Lot">
+                      {it.batch_number ?? "—"}
+                    </td>
+                    <td className="num" data-label="Quantité">
+                      {formatQty(it.quantity)}
+                    </td>
+                    <td className="num muted" data-label="Coût réel">
+                      {formatMoney(it.unit_cost)}
+                    </td>
+                    <td
+                      className="num"
+                      style={{ fontWeight: 700 }}
+                      data-label="Avoir"
+                    >
                       {formatMoney(it.quantity * it.unit_cost)}
                     </td>
                   </tr>
                 ))}
                 <tr>
-                  <td colSpan={4} style={{ fontWeight: 700 }}>
+                  <td
+                    colSpan={4}
+                    style={{ fontWeight: 700 }}
+                    data-label="Total"
+                  >
                     TOTAL AVOIR
                   </td>
-                  <td className="num" style={{ fontWeight: 800 }}>
+                  <td
+                    className="num"
+                    style={{ fontWeight: 800 }}
+                    data-label="Montant"
+                  >
                     {formatMoney(detail.total_cost)}
                   </td>
                 </tr>
@@ -1434,7 +1477,7 @@ function OtifTab() {
         </EmptyState>
       ) : (
         <Card pad={false}>
-          <div className="table-wrap">
+          <div className="table-wrap table-cards">
             <table>
               <thead>
                 <tr>
@@ -1450,16 +1493,22 @@ function OtifTab() {
               <tbody>
                 {rows.map((r) => (
                   <tr key={r.supplier_id}>
-                    <td style={{ fontWeight: 600 }}>{r.supplier_name}</td>
-                    <td className="num">{r.orders}</td>
-                    <td className="num muted">{r.closed_orders}</td>
-                    <td className="num">
+                    <td style={{ fontWeight: 600 }} data-label="Fournisseur">
+                      {r.supplier_name}
+                    </td>
+                    <td className="num" data-label="Commandes">
+                      {r.orders}
+                    </td>
+                    <td className="num muted" data-label="Clôturées">
+                      {r.closed_orders}
+                    </td>
+                    <td className="num" data-label="À temps">
                       {r.on_time_rate != null ? `${r.on_time_rate} %` : "—"}
                     </td>
-                    <td className="num">
+                    <td className="num" data-label="Complètes">
                       {r.in_full_rate != null ? `${r.in_full_rate} %` : "—"}
                     </td>
-                    <td className="num">
+                    <td className="num" data-label="OTIF">
                       <Badge
                         tone={
                           r.otif_rate == null
@@ -1474,7 +1523,7 @@ function OtifTab() {
                         {r.otif_rate != null ? `${r.otif_rate} %` : "—"}
                       </Badge>
                     </td>
-                    <td className="num muted">
+                    <td className="num muted" data-label="Délai réel moyen">
                       {r.avg_lead_time_days != null
                         ? `${r.avg_lead_time_days} j`
                         : "—"}

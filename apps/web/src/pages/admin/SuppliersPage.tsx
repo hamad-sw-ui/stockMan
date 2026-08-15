@@ -159,7 +159,7 @@ export default function SuppliersPage() {
         />
       ) : (
         <Card pad={false}>
-          <div className="table-wrap">
+          <div className="table-wrap table-cards">
             <table>
               <thead>
                 <tr>
@@ -174,7 +174,7 @@ export default function SuppliersPage() {
               <tbody>
                 {filtered.map((s) => (
                   <tr key={s.id}>
-                    <td>
+                    <td data-label="Nom">
                       <button
                         className="btn btn-ghost btn-sm"
                         style={{ fontWeight: 700, padding: 0 }}
@@ -183,15 +183,21 @@ export default function SuppliersPage() {
                         {s.name}
                       </button>
                     </td>
-                    <td className="muted">{s.phone ?? "—"}</td>
-                    <td className="muted">{s.email ?? "—"}</td>
-                    <td className="num muted">
+                    <td className="muted" data-label="Téléphone">
+                      {s.phone ?? "—"}
+                    </td>
+                    <td className="muted" data-label="Email">
+                      {s.email ?? "—"}
+                    </td>
+                    <td className="num muted" data-label="Délai">
                       {s.default_lead_time_days != null
                         ? `${s.default_lead_time_days} j`
                         : "—"}
                     </td>
-                    <td className="num">{s.receipt_count ?? 0}</td>
-                    <td>
+                    <td className="num" data-label="Réceptions">
+                      {s.receipt_count ?? 0}
+                    </td>
+                    <td data-label="" className="col-actions">
                       <div
                         className="row"
                         style={{ gap: 4, flexWrap: "nowrap" }}
@@ -337,7 +343,7 @@ export default function SuppliersPage() {
           {detail.receipts.length === 0 ? (
             <EmptyState emoji="📥" title="Aucune réception" />
           ) : (
-            <div className="table-wrap">
+            <div className="table-wrap table-cards">
               <table>
                 <thead>
                   <tr>
@@ -351,11 +357,21 @@ export default function SuppliersPage() {
                 <tbody>
                   {detail.receipts.map((r) => (
                     <tr key={r.id}>
-                      <td className="muted">{formatDate(r.created_at)}</td>
-                      <td className="mono">{r.reference ?? "—"}</td>
-                      <td>{r.depot_name}</td>
-                      <td className="num">{formatQty(r.line_count)}</td>
-                      <td className="num" style={{ fontWeight: 700 }}>
+                      <td className="muted" data-label="Date">
+                        {formatDate(r.created_at)}
+                      </td>
+                      <td className="mono" data-label="Référence">
+                        {r.reference ?? "—"}
+                      </td>
+                      <td data-label="Dépôt">{r.depot_name}</td>
+                      <td className="num" data-label="Lignes">
+                        {formatQty(r.line_count)}
+                      </td>
+                      <td
+                        className="num"
+                        style={{ fontWeight: 700 }}
+                        data-label="Montant"
+                      >
                         {formatMoney(r.total_cost)}
                       </td>
                     </tr>

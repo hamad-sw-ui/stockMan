@@ -141,7 +141,7 @@ export default function QuotesPage() {
         />
       ) : (
         <Card pad={false}>
-          <div className="table-wrap">
+          <div className="table-wrap table-cards">
             <table>
               <thead>
                 <tr>
@@ -164,16 +164,26 @@ export default function QuotesPage() {
                       new Date().toISOString().slice(0, 10);
                   return (
                     <tr key={r.id}>
-                      <td className="muted">{formatDateTime(r.created_at)}</td>
-                      <td>
+                      <td className="muted" data-label="Date">
+                        {formatDateTime(r.created_at)}
+                      </td>
+                      <td data-label="Client">
                         {r.customer_name ?? <span className="muted">—</span>}
                       </td>
-                      <td className="muted">{r.depot_name}</td>
-                      <td className="num">{formatQty(r.line_count)}</td>
-                      <td className="num" style={{ fontWeight: 700 }}>
+                      <td className="muted" data-label="Dépôt">
+                        {r.depot_name}
+                      </td>
+                      <td className="num" data-label="Lignes">
+                        {formatQty(r.line_count)}
+                      </td>
+                      <td
+                        className="num"
+                        style={{ fontWeight: 700 }}
+                        data-label="Total"
+                      >
                         {formatMoney(r.total_amount)}
                       </td>
-                      <td className="muted">
+                      <td className="muted" data-label="Validité">
                         {r.valid_until ? formatDate(r.valid_until) : "—"}
                         {expired ? (
                           <>
@@ -182,12 +192,12 @@ export default function QuotesPage() {
                           </>
                         ) : null}
                       </td>
-                      <td>
+                      <td data-label="Statut">
                         <Badge tone={STATUS[r.status].tone}>
                           {STATUS[r.status].label}
                         </Badge>
                       </td>
-                      <td>
+                      <td data-label="" className="col-actions">
                         <Button
                           variant="ghost"
                           size="sm"
@@ -603,7 +613,7 @@ function QuoteDetailModal({
         {detail.converted_sale_id ? " · Vente liée créée" : ""}
       </p>
 
-      <div className="table-wrap">
+      <div className="table-wrap table-cards">
         <table>
           <thead>
             <tr>
@@ -616,28 +626,35 @@ function QuoteDetailModal({
           <tbody>
             {detail.items.map((it) => (
               <tr key={it.id}>
-                <td>
+                <td data-label="Produit">
                   {it.product_name}
                   {it.variant_name ? (
                     <span className="muted"> · {it.variant_name}</span>
                   ) : null}
                 </td>
-                <td className="num">
+                <td className="num" data-label="Qté">
                   {formatQty(it.quantity)} {it.unit_symbol ?? ""}
                 </td>
-                <td className="num">{formatMoney(it.unit_price)}</td>
-                <td className="num" style={{ fontWeight: 700 }}>
+                <td className="num" data-label="PU figé">
+                  {formatMoney(it.unit_price)}
+                </td>
+                <td
+                  className="num"
+                  style={{ fontWeight: 700 }}
+                  data-label="Total"
+                >
                   {formatMoney(it.total_price)}
                 </td>
               </tr>
             ))}
             <tr>
-              <td colSpan={3} style={{ fontWeight: 700 }}>
+              <td colSpan={3} style={{ fontWeight: 700 }} data-label="Total">
                 TOTAL
               </td>
               <td
                 className="num"
                 style={{ fontWeight: 800, fontSize: "1.05rem" }}
+                data-label="Montant"
               >
                 {formatMoney(detail.total_amount)}
               </td>

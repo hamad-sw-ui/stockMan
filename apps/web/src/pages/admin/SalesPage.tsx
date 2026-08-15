@@ -78,7 +78,7 @@ export default function SalesPage() {
 
       <Card className="filters">
         <div
-          className="row"
+          className="row filters-row"
           style={{ flexWrap: "wrap", alignItems: "flex-end" }}
         >
           <Field label="Du">
@@ -182,7 +182,7 @@ export default function SalesPage() {
         />
       ) : (
         <Card pad={false}>
-          <div className="table-wrap">
+          <div className="table-wrap table-cards">
             <table>
               <thead>
                 <tr>
@@ -202,13 +202,25 @@ export default function SalesPage() {
                     style={{ cursor: "pointer" }}
                     onClick={() => navigate(`/admin/ventes/${s.id}`)}
                   >
-                    <td className="muted" style={{ whiteSpace: "nowrap" }}>
+                    <td
+                      className="muted"
+                      style={{ whiteSpace: "nowrap" }}
+                      data-label="Date"
+                    >
                       {formatDateTime(s.created_at)}
                     </td>
-                    <td>{s.vendor_name}</td>
-                    <td className="muted">{s.depot_name}</td>
-                    <td className="num">{s.line_count}</td>
-                    <td className="num" style={{ fontWeight: 700 }}>
+                    <td data-label="Vendeur">{s.vendor_name}</td>
+                    <td className="muted" data-label="Dépôt">
+                      {s.depot_name}
+                    </td>
+                    <td className="num" data-label="Lignes">
+                      {s.line_count}
+                    </td>
+                    <td
+                      className="num"
+                      style={{ fontWeight: 700 }}
+                      data-label="Montant"
+                    >
                       {formatMoney(s.total_amount)}
                       {s.returned_amount > 0 ? (
                         <span className="muted" style={{ fontWeight: 400 }}>
@@ -217,8 +229,10 @@ export default function SalesPage() {
                         </span>
                       ) : null}
                     </td>
-                    <td>{paymentMethodLabel(s.payment_method)}</td>
-                    <td>
+                    <td data-label="Paiement">
+                      {paymentMethodLabel(s.payment_method)}
+                    </td>
+                    <td data-label="Statut">
                       {s.status === "VOIDED" ? (
                         <Badge tone="danger">Annulée</Badge>
                       ) : (

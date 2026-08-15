@@ -87,6 +87,9 @@ export default function PosPage() {
   } | null>(null);
   const [payOpen, setPayOpen] = useState(false);
   const [sold, setSold] = useState<SoldState | null>(null);
+  // R2 — panneau panier repliable ≤ 480 px (le bureau est inchangé :
+  // la poignée `.pos-bar-toggle` n'y est jamais affichée).
+  const [cartOpen, setCartOpen] = useState(false);
   const [scanOpen, setScanOpen] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
   const canCameraScan = useMemo(() => cameraScanSupported(), []);
@@ -732,203 +735,224 @@ export default function PosPage() {
       </section>
 
       {/* ------------------------------- Panier -------------------------------- */}
-      <aside className="pos-cart">
-        <div className="row-between" style={{ marginBottom: 8 }}>
-          <h2 style={{ margin: 0 }}>🧾 Panier</h2>
-          {cart.length > 0 ? (
-            <Button variant="ghost" size="sm" onClick={() => setCart([])}>
-              Vider
-            </Button>
-          ) : null}
-        </div>
-
-        {cart.length === 0 ? (
-          <div className="empty" style={{ padding: "24px 8px" }}>
-            <span className="emoji" aria-hidden>
-              🛒
-            </span>
-            <h3>Panier vide</h3>
-            <p>
-              Touchez un produit ou scannez un code-barres pour commencer la
-              vente.
-            </p>
+      <aside className={`pos-cart pos-bar${cartOpen ? " open" : ""}`}>
+        {/* Poignée mobile (≤ 480 px) — invisible au-delà, voir global.css R2. */}
+        <button
+          type="button"
+          className="pos-bar-toggle"
+          onClick={() => setCartOpen(!cartOpen)}
+          aria-expanded={cartOpen}
+        >
+          <span aria-hidden>🧾</span> Panier
+          <span className="pos-cart-count">
+            {formatQty(cart.reduce((n, l) => n + l.quantity, 0))} article(s)
+          </span>
+          <span className="pos-bar-total money">{formatMoney(total)}</span>
+          <span aria-hidden>{cartOpen ? "▾" : "▴"}</span>
+        </button>
+        <div className="pos-bar-body">
+          <div className="row-between" style={{ marginBottom: 8 }}>
+            <h2 style={{ margin: 0 }}>🧾 Panier</h2>
+            {cart.length > 0 ? (
+              <Button variant="ghost" size="sm" onClick={() => setCart([])}>
+                Vider
+              </Button>
+            ) : null}
           </div>
-        ) : (
-          <>
-            <div style={{ flex: 1, overflow: "auto" }}>
-              {cart.map((l) => (
-                <div key={l.key} className="cart-line">
-                  <div>
-                    <div className="name">{l.product.name}</div>
-                    {l.variant ? (
+
+          {cart.length === 0 ? (
+            <div className="empty empty-block" style={{ padding: "24px 8px" }}>
+              <span className="emoji" aria-hidden>
+                🛒
+              </span>
+              <h3>Panier vide</h3>
+              <p>
+                Touchez un produit ou scannez un code-barres pour commencer la
+                vente.
+              </p>
+            </div>
+          ) : (
+            <>
+              <div style={{ flex: 1, overflow: "auto" }}>
+                {cart.map((l) => (
+                  <div key={l.key} className="cart-line">
+                    <div>
+                      <div className="name product-name">{l.product.name}</div>
+                      {l.variant ? (
+                        <div className="muted" style={{ fontSize: "0.8rem" }}>
+                          {l.variant.name}
+                        </div>
+                      ) : null}
                       <div className="muted" style={{ fontSize: "0.8rem" }}>
-                        {l.variant.name}
+                        {formatMoney(l.unitPrice)} /{" "}
+                        {l.unit?.symbol ?? l.product.unitSymbol ?? "u"}
                       </div>
-                    ) : null}
-                    <div className="muted" style={{ fontSize: "0.8rem" }}>
-                      {formatMoney(l.unitPrice)} /{" "}
-                      {l.unit?.symbol ?? l.product.unitSymbol ?? "u"}
-                    </div>
-                    {l.product.requiresSerial ? (
-                      <div style={{ marginTop: 4 }}>
-                        <Badge tone="info">🔢 Sérialisé</Badge>{" "}
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() =>
-                            setSerialPick({
-                              productId: l.product.id,
-                              variantId: l.variant?.id ?? null,
-                            })
-                          }
-                        >
-                          Modifier les IMEI
-                        </Button>
-                        <div
+                      {l.product.requiresSerial ? (
+                        <div style={{ marginTop: 4 }}>
+                          <Badge tone="info">🔢 Sérialisé</Badge>{" "}
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() =>
+                              setSerialPick({
+                                productId: l.product.id,
+                                variantId: l.variant?.id ?? null,
+                              })
+                            }
+                          >
+                            Modifier les IMEI
+                          </Button>
+                          <div
+                            className="muted"
+                            style={{
+                              fontSize: "0.72rem",
+                              fontFamily: "monospace",
+                              marginTop: 2,
+                              wordBreak: "break-all",
+                            }}
+                          >
+                            {(l.serialNumbers ?? []).join(" · ")}
+                          </div>
+                        </div>
+                      ) : null}
+                      <div className="row" style={{ gap: 6, marginTop: 4 }}>
+                        {(b?.units ?? []).length > 1 &&
+                        !l.product.requiresSerial ? (
+                          <select
+                            className="select"
+                            style={{
+                              padding: "2px 6px",
+                              fontSize: "0.8rem",
+                              width: "auto",
+                            }}
+                            value={l.unit?.id ?? ""}
+                            onChange={(e) => {
+                              if (e.target.value)
+                                setUnit(l.key, e.target.value);
+                            }}
+                            aria-label="Unité de vente"
+                          >
+                            {(b?.units ?? []).map((u) => {
+                              // Propose l'unité catalogue en tête, puis les dérivées de même famille (facteur multiple)
+                              return (
+                                <option key={u.id} value={u.id}>
+                                  {u.symbol}
+                                  {u.base_value !== 1
+                                    ? ` ×${u.base_value}`
+                                    : ""}
+                                </option>
+                              );
+                            })}
+                          </select>
+                        ) : null}
+                        <label
                           className="muted"
                           style={{
-                            fontSize: "0.72rem",
-                            fontFamily: "monospace",
-                            marginTop: 2,
-                            wordBreak: "break-all",
+                            fontSize: "0.78rem",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 3,
                           }}
                         >
-                          {(l.serialNumbers ?? []).join(" · ")}
-                        </div>
+                          Remise %
+                          <input
+                            style={{ width: 44 }}
+                            inputMode="decimal"
+                            value={l.discountPct ?? 0}
+                            onChange={(e) =>
+                              setDiscount(
+                                l.key,
+                                Number(e.target.value.replace(",", ".")) || 0,
+                              )
+                            }
+                            aria-label="Remise en pourcentage"
+                          />
+                        </label>
                       </div>
-                    ) : null}
-                    <div className="row" style={{ gap: 6, marginTop: 4 }}>
-                      {(b?.units ?? []).length > 1 &&
-                      !l.product.requiresSerial ? (
-                        <select
-                          className="select"
-                          style={{
-                            padding: "2px 6px",
-                            fontSize: "0.8rem",
-                            width: "auto",
-                          }}
-                          value={l.unit?.id ?? ""}
-                          onChange={(e) => {
-                            if (e.target.value) setUnit(l.key, e.target.value);
-                          }}
-                          aria-label="Unité de vente"
-                        >
-                          {(b?.units ?? []).map((u) => {
-                            // Propose l'unité catalogue en tête, puis les dérivées de même famille (facteur multiple)
-                            return (
-                              <option key={u.id} value={u.id}>
-                                {u.symbol}
-                                {u.base_value !== 1 ? ` ×${u.base_value}` : ""}
-                              </option>
-                            );
-                          })}
-                        </select>
-                      ) : null}
-                      <label
-                        className="muted"
-                        style={{
-                          fontSize: "0.78rem",
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 3,
-                        }}
-                      >
-                        Remise %
-                        <input
-                          style={{ width: 44 }}
-                          inputMode="decimal"
-                          value={l.discountPct ?? 0}
-                          onChange={(e) =>
-                            setDiscount(
-                              l.key,
-                              Number(e.target.value.replace(",", ".")) || 0,
-                            )
-                          }
-                          aria-label="Remise en pourcentage"
-                        />
-                      </label>
+                    </div>
+                    <div
+                      style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        alignItems: "flex-end",
+                        gap: 6,
+                      }}
+                    >
+                      <div className="amount money">
+                        {formatMoney(l.lineTotal)}
+                      </div>
+                      {l.product.requiresSerial ? (
+                        <>
+                          <div className="muted" style={{ fontSize: "0.8rem" }}>
+                            {formatQty(l.quantity)} article(s)
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => removeLine(l.key)}
+                            aria-label="Retirer la ligne"
+                          >
+                            🗑️
+                          </Button>
+                        </>
+                      ) : (
+                        <div className="qty-stepper">
+                          <button
+                            onClick={() =>
+                              l.quantity <= 1
+                                ? removeLine(l.key)
+                                : setQty(l.key, l.quantity - 1)
+                            }
+                            aria-label="Diminuer"
+                          >
+                            −
+                          </button>
+                          <span>{formatQty(l.quantity)}</span>
+                          <button
+                            onClick={() => setQty(l.key, l.quantity + 1)}
+                            aria-label="Augmenter"
+                          >
+                            +
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </div>
-                  <div
-                    style={{
-                      display: "flex",
-                      flexDirection: "column",
-                      alignItems: "flex-end",
-                      gap: 6,
-                    }}
-                  >
-                    <div className="amount">{formatMoney(l.lineTotal)}</div>
-                    {l.product.requiresSerial ? (
-                      <>
-                        <div className="muted" style={{ fontSize: "0.8rem" }}>
-                          {formatQty(l.quantity)} article(s)
-                        </div>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => removeLine(l.key)}
-                          aria-label="Retirer la ligne"
-                        >
-                          🗑️
-                        </Button>
-                      </>
-                    ) : (
-                      <div className="qty-stepper">
-                        <button
-                          onClick={() =>
-                            l.quantity <= 1
-                              ? removeLine(l.key)
-                              : setQty(l.key, l.quantity - 1)
-                          }
-                          aria-label="Diminuer"
-                        >
-                          −
-                        </button>
-                        <span>{formatQty(l.quantity)}</span>
-                        <button
-                          onClick={() => setQty(l.key, l.quantity + 1)}
-                          aria-label="Augmenter"
-                        >
-                          +
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <div className="cart-pay">
-              <div className="row-between" style={{ marginBottom: 8 }}>
-                <strong>Total</strong>
-                <strong style={{ fontSize: "1.25rem" }}>
-                  {formatMoney(total)}
-                </strong>
-              </div>
-              <div className="pay-grid">
-                {METHODS.map((m) => (
-                  <Button
-                    key={m.id}
-                    variant={m.id === "CASH" ? "primary" : "outline"}
-                    size="lg"
-                    onClick={() => setPayOpen(true)}
-                  >
-                    {m.icon} {m.label}
-                  </Button>
                 ))}
               </div>
-              {!online ? (
-                <p
-                  className="muted"
-                  style={{ fontSize: "0.8rem", marginTop: 6 }}
-                >
-                  📴 Hors-ligne : la vente sera mise en file et synchronisée
-                  automatiquement.
-                </p>
-              ) : null}
-            </div>
-          </>
-        )}
+
+              <div className="cart-pay">
+                <div className="row-between" style={{ marginBottom: 8 }}>
+                  <strong>Total</strong>
+                  <strong className="money" style={{ fontSize: "1.25rem" }}>
+                    {formatMoney(total)}
+                  </strong>
+                </div>
+                <div className="pay-grid pos-bar-actions">
+                  {METHODS.map((m) => (
+                    <Button
+                      key={m.id}
+                      variant={m.id === "CASH" ? "primary" : "outline"}
+                      size="lg"
+                      onClick={() => setPayOpen(true)}
+                    >
+                      {m.icon} {m.label}
+                    </Button>
+                  ))}
+                </div>
+                {!online ? (
+                  <p
+                    className="muted"
+                    style={{ fontSize: "0.8rem", marginTop: 6 }}
+                  >
+                    📴 Hors-ligne : la vente sera mise en file et synchronisée
+                    automatiquement.
+                  </p>
+                ) : null}
+              </div>
+            </>
+          )}
+        </div>
       </aside>
 
       {/* Choix de variante */}

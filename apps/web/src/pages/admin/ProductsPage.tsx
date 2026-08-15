@@ -173,7 +173,7 @@ export default function ProductsPage() {
       <Card className="filters">
         {/* C3 — scan direct (alias inclus) : ouvre la fiche du produit résolu. */}
         <div
-          className="row"
+          className="row filters-row"
           style={{ flexWrap: "wrap", alignItems: "flex-end" }}
         >
           <SearchInput
@@ -256,7 +256,7 @@ export default function ProductsPage() {
         </EmptyState>
       ) : (
         <Card pad={false}>
-          <div className="table-wrap">
+          <div className="table-wrap table-cards">
             <table>
               <thead>
                 <tr>
@@ -281,7 +281,7 @@ export default function ProductsPage() {
                     style={{ cursor: "pointer" }}
                     onClick={() => navigate(`/admin/produits/${p.id}`)}
                   >
-                    <td onClick={(e) => e.stopPropagation()}>
+                    <td data-label="" onClick={(e) => e.stopPropagation()}>
                       <input
                         type="checkbox"
                         checked={labelPick.has(p.id)}
@@ -295,7 +295,7 @@ export default function ProductsPage() {
                         }
                       />
                     </td>
-                    <td>
+                    <td data-label="Produit">
                       <div style={{ fontWeight: 700 }}>{p.name}</div>
                       <div className="muted" style={{ fontSize: "0.8rem" }}>
                         {p.barcode ? <code>{p.barcode}</code> : null}
@@ -306,13 +306,21 @@ export default function ProductsPage() {
                         {p.archived_at ? " · archivé" : ""}
                       </div>
                     </td>
-                    <td className="muted">{p.category_name ?? "—"}</td>
-                    <td className="num">{formatMoney(p.selling_price)}</td>
-                    <td className="num" style={{ fontWeight: 700 }}>
+                    <td className="muted" data-label="Catégorie">
+                      {p.category_name ?? "—"}
+                    </td>
+                    <td className="num" data-label="Prix vente">
+                      {formatMoney(p.selling_price)}
+                    </td>
+                    <td
+                      className="num"
+                      style={{ fontWeight: 700 }}
+                      data-label="Stock"
+                    >
                       {formatQty(depotId ? p.depot_qty : p.total_qty)}{" "}
                       {p.unit_symbol ?? ""}
                     </td>
-                    <td>
+                    <td data-label="Statut">
                       {p.archived_at ? (
                         <Badge>Archivé</Badge>
                       ) : (
@@ -321,7 +329,7 @@ export default function ProductsPage() {
                         </Badge>
                       )}
                     </td>
-                    <td className="num muted">
+                    <td className="num muted" data-label="Seuil">
                       {formatQty(p.min_stock_level)}
                     </td>
                   </tr>
@@ -419,8 +427,10 @@ export default function ProductsPage() {
                   <tbody>
                     {report.errors.map((e) => (
                       <tr key={e.ligne}>
-                        <td className="num">{e.ligne}</td>
-                        <td>{e.message}</td>
+                        <td className="num" data-label="Ligne">
+                          {e.ligne}
+                        </td>
+                        <td data-label="Motif">{e.message}</td>
                       </tr>
                     ))}
                   </tbody>

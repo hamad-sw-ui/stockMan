@@ -377,7 +377,7 @@ export default function ReceiptsPage() {
         </EmptyState>
       ) : (
         <Card pad={false}>
-          <div className="table-wrap">
+          <div className="table-wrap table-cards">
             <table>
               <thead>
                 <tr>
@@ -394,18 +394,34 @@ export default function ReceiptsPage() {
               <tbody>
                 {q.data.data.map((r) => (
                   <tr key={r.id}>
-                    <td className="muted" style={{ whiteSpace: "nowrap" }}>
+                    <td
+                      className="muted"
+                      style={{ whiteSpace: "nowrap" }}
+                      data-label="Date"
+                    >
                       {formatDateTime(r.created_at)}
                     </td>
-                    <td className="mono">{r.reference ?? "—"}</td>
-                    <td>{r.supplier_name ?? "—"}</td>
-                    <td className="muted">{r.depot_name}</td>
-                    <td className="num">{r.line_count}</td>
-                    <td className="num" style={{ fontWeight: 700 }}>
+                    <td className="mono" data-label="Référence">
+                      {r.reference ?? "—"}
+                    </td>
+                    <td data-label="Fournisseur">{r.supplier_name ?? "—"}</td>
+                    <td className="muted" data-label="Dépôt">
+                      {r.depot_name}
+                    </td>
+                    <td className="num" data-label="Lignes">
+                      {r.line_count}
+                    </td>
+                    <td
+                      className="num"
+                      style={{ fontWeight: 700 }}
+                      data-label="Montant"
+                    >
                       {formatMoney(r.total_cost)}
                     </td>
-                    <td className="muted">{r.received_by_name ?? "—"}</td>
-                    <td>
+                    <td className="muted" data-label="Par">
+                      {r.received_by_name ?? "—"}
+                    </td>
+                    <td data-label="" className="col-actions">
                       <Button
                         variant="ghost"
                         size="sm"
@@ -526,7 +542,7 @@ export default function ReceiptsPage() {
           ) : null}
 
           {lines.length > 0 ? (
-            <div className="table-wrap">
+            <div className="table-wrap table-cards">
               <table>
                 <thead>
                   <tr>
@@ -543,7 +559,7 @@ export default function ReceiptsPage() {
                   {lines.map((l, i) => (
                     <Fragment key={`${l.productId}:${l.variantId ?? ""}`}>
                       <tr>
-                        <td style={{ fontWeight: 600 }}>
+                        <td style={{ fontWeight: 600 }} data-label="Produit">
                           {l.productName}
                           {l.variantName ? (
                             <span className="muted"> · {l.variantName}</span>
@@ -561,7 +577,7 @@ export default function ReceiptsPage() {
                             </span>
                           ) : null}
                         </td>
-                        <td style={{ maxWidth: 90 }}>
+                        <td style={{ maxWidth: 90 }} data-label="Qté">
                           <Input
                             inputMode="decimal"
                             value={l.quantity}
@@ -570,7 +586,7 @@ export default function ReceiptsPage() {
                             }
                           />
                         </td>
-                        <td style={{ maxWidth: 110 }}>
+                        <td style={{ maxWidth: 110 }} data-label="Unité">
                           <Select
                             value={l.unitId}
                             onChange={(e) =>
@@ -587,7 +603,10 @@ export default function ReceiptsPage() {
                             ))}
                           </Select>
                         </td>
-                        <td style={{ maxWidth: 110 }}>
+                        <td
+                          style={{ maxWidth: 110 }}
+                          data-label="Coût unitaire"
+                        >
                           <Input
                             inputMode="decimal"
                             value={l.unitCost}
@@ -596,7 +615,7 @@ export default function ReceiptsPage() {
                             }
                           />
                         </td>
-                        <td style={{ maxWidth: 110 }}>
+                        <td style={{ maxWidth: 110 }} data-label="N° lot">
                           <Input
                             value={l.batchNumber}
                             onChange={(e) =>
@@ -604,7 +623,7 @@ export default function ReceiptsPage() {
                             }
                           />
                         </td>
-                        <td>
+                        <td data-label="Péremption">
                           <Input
                             type="date"
                             value={l.expiryDate}
@@ -613,7 +632,7 @@ export default function ReceiptsPage() {
                             }
                           />
                         </td>
-                        <td>
+                        <td data-label="" className="col-actions">
                           <Button
                             variant="ghost"
                             size="sm"
@@ -626,8 +645,12 @@ export default function ReceiptsPage() {
                         </td>
                       </tr>
                       {l.requiresSerial ? (
-                        <tr>
-                          <td colSpan={7} style={{ background: "#fffbeb" }}>
+                        <tr className="check-stray">
+                          <td
+                            colSpan={7}
+                            style={{ background: "#fffbeb" }}
+                            data-label="Numéros de série"
+                          >
                             <SerialLineEditor
                               serials={l.serials}
                               expected={Math.round(
@@ -777,8 +800,10 @@ export default function ReceiptsPage() {
                       <tbody>
                         {impResult.errors.map((er, i) => (
                           <tr key={i}>
-                            <td className="num">{er.ligne}</td>
-                            <td>{er.message}</td>
+                            <td className="num" data-label="Ligne">
+                              {er.ligne}
+                            </td>
+                            <td data-label="Motif du rejet">{er.message}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -811,7 +836,7 @@ export default function ReceiptsPage() {
             {detail.supplier_name ?? "Fournisseur non précisé"} ·{" "}
             {detail.depot_name} · saisie par {detail.received_by_name ?? "—"}
           </p>
-          <div className="table-wrap">
+          <div className="table-wrap table-cards">
             <table>
               <thead>
                 <tr>
@@ -825,16 +850,26 @@ export default function ReceiptsPage() {
               <tbody>
                 {detail.items.map((i) => (
                   <tr key={i.id}>
-                    <td>
+                    <td data-label="Produit">
                       {i.product_name}
                       {i.variant_name ? (
                         <span className="muted"> · {i.variant_name}</span>
                       ) : null}
                     </td>
-                    <td className="mono muted">{i.batch_number ?? "—"}</td>
-                    <td className="num">{formatQty(i.base_qty)}</td>
-                    <td className="num">{formatMoney(i.unit_cost)}</td>
-                    <td className="num" style={{ fontWeight: 700 }}>
+                    <td className="mono muted" data-label="Lot">
+                      {i.batch_number ?? "—"}
+                    </td>
+                    <td className="num" data-label="Quantité (base)">
+                      {formatQty(i.base_qty)}
+                    </td>
+                    <td className="num" data-label="Coût unitaire">
+                      {formatMoney(i.unit_cost)}
+                    </td>
+                    <td
+                      className="num"
+                      style={{ fontWeight: 700 }}
+                      data-label="Sous-total"
+                    >
                       {formatMoney(i.base_qty * i.unit_cost)}
                     </td>
                   </tr>

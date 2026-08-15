@@ -197,7 +197,7 @@ export default function CustomersPage() {
 
       <Card className="filters">
         <div
-          className="row"
+          className="row filters-row"
           style={{ flexWrap: "wrap", alignItems: "flex-end" }}
         >
           <SearchInput
@@ -244,7 +244,7 @@ export default function CustomersPage() {
         />
       ) : (
         <Card pad={false}>
-          <div className="table-wrap">
+          <div className="table-wrap table-cards">
             <table>
               <thead>
                 <tr>
@@ -259,7 +259,7 @@ export default function CustomersPage() {
               <tbody>
                 {rows.map((c) => (
                   <tr key={c.id}>
-                    <td>
+                    <td data-label="Nom">
                       <button
                         className="btn btn-ghost btn-sm"
                         style={{ fontWeight: 700, padding: 0 }}
@@ -268,12 +268,15 @@ export default function CustomersPage() {
                         {c.name}
                       </button>
                     </td>
-                    <td className="muted">{c.phone ?? "—"}</td>
-                    <td className="num muted">
+                    <td className="muted" data-label="Téléphone">
+                      {c.phone ?? "—"}
+                    </td>
+                    <td className="num muted" data-label="Plafond">
                       {c.credit_limit > 0 ? formatMoney(c.credit_limit) : "—"}
                     </td>
                     <td
                       className="num"
+                      data-label="Solde dû"
                       style={{
                         fontWeight: 700,
                         color: c.balance > 0 ? "var(--danger)" : undefined,
@@ -281,7 +284,7 @@ export default function CustomersPage() {
                     >
                       {c.balance > 0 ? formatMoney(c.balance) : "—"}
                     </td>
-                    <td>
+                    <td data-label="Statut">
                       {c.is_active ? (
                         c.balance > 0 &&
                         c.credit_limit > 0 &&
@@ -296,7 +299,7 @@ export default function CustomersPage() {
                         <Badge tone="muted">Inactif</Badge>
                       )}
                     </td>
-                    <td>
+                    <td data-label="" className="col-actions">
                       <div
                         className="row"
                         style={{ gap: 4, flexWrap: "nowrap" }}
@@ -418,7 +421,7 @@ export default function CustomersPage() {
           {detail.debts.length === 0 ? (
             <EmptyState emoji="✅" title="Aucune dette en cours" />
           ) : (
-            <div className="table-wrap">
+            <div className="table-wrap table-cards">
               <table>
                 <thead>
                   <tr>
@@ -433,7 +436,7 @@ export default function CustomersPage() {
                 <tbody>
                   {detail.debts.map((d) => (
                     <tr key={d.saleId}>
-                      <td>
+                      <td data-label="Vente">
                         <div>{d.date ? formatDate(d.date) : "—"}</div>
                         <div className="muted" style={{ fontSize: "0.78rem" }}>
                           {d.days > 30
@@ -441,18 +444,23 @@ export default function CustomersPage() {
                             : `${d.days} j`}
                         </div>
                       </td>
-                      <td className="muted">
+                      <td className="muted" data-label="Échéance">
                         {d.dueDate ? formatDate(d.dueDate) : "—"}
                       </td>
-                      <td className="num">{formatMoney(d.total)}</td>
-                      <td className="num muted">{formatMoney(d.paid)}</td>
+                      <td className="num" data-label="Total">
+                        {formatMoney(d.total)}
+                      </td>
+                      <td className="num muted" data-label="Payé">
+                        {formatMoney(d.paid)}
+                      </td>
                       <td
                         className="num"
+                        data-label="Reste"
                         style={{ fontWeight: 700, color: "var(--danger)" }}
                       >
                         {formatMoney(d.outstanding)}
                       </td>
-                      <td>
+                      <td data-label="" className="col-actions">
                         <Button
                           variant="outline"
                           size="sm"
@@ -493,9 +501,15 @@ export default function CustomersPage() {
                 <tbody>
                   {detail.recentPayments.map((p) => (
                     <tr key={p.id}>
-                      <td className="muted">{formatDateTime(p.created_at)}</td>
-                      <td>{paymentMethodLabel(p.method)}</td>
-                      <td className="num" style={{ fontWeight: 700 }}>
+                      <td className="muted" data-label="Date">
+                        {formatDateTime(p.created_at)}
+                      </td>
+                      <td data-label="Mode">{paymentMethodLabel(p.method)}</td>
+                      <td
+                        className="num"
+                        style={{ fontWeight: 700 }}
+                        data-label="Montant"
+                      >
                         {formatMoney(p.amount)}
                       </td>
                     </tr>

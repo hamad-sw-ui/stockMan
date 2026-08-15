@@ -99,3 +99,91 @@ describe("R1 — Feuille globale (contrat statique)", () => {
     expect(css).toMatch(/tpl-38x25/);
   });
 });
+
+/* ---------------------------------------------------------------- R2 ---- */
+
+describe("R2 — Pattern listes → cartes (≤ 760 px)", () => {
+  it("la feuille expose le pattern .table-cards additif", () => {
+    // En-tête masqué
+    expect(css).toMatch(
+      /@media\s+screen\s+and\s+\(max-width:\s*760px\)\s*\{[\s\S]*?\.table-cards thead\s*\{\s*display:\s*none/,
+    );
+    // Libellé injecté depuis l'attribut data-label
+    expect(css).toMatch(
+      /\.table-cards td::before\s*\{[\s\S]*?content:\s*attr\(data-label\)/,
+    );
+    // Lignes transformées en cartes — confinées à `screen` (impression intacte)
+    expect(css).toMatch(
+      /@media\s+screen\s+and\s+\(max-width:\s*760px\)\s*\{[\s\S]*?\.table-cards tbody tr\s*\{\s*display:\s*block/,
+    );
+  });
+
+  it.each([
+    ["SalesPage", ["Date", "Vendeur", "Montant", "Paiement", "Statut"]],
+    ["ProductsPage", ["Produit", "Catégorie", "Prix vente", "Stock", "Seuil"]],
+    ["CustomersPage", ["Nom", "Téléphone", "Solde dû", "Statut"]],
+    ["SuppliersPage", ["Nom", "Téléphone", "Délai", "Réceptions"]],
+    ["PurchaseOrdersPage", ["Créée le", "Fournisseur", "Statut", "OTIF"]],
+    ["ReceiptsPage", ["Date", "Fournisseur", "Montant", "Par"]],
+    ["QuotesPage", ["Date", "Client", "Total", "Validité", "Statut"]],
+  ])(
+    "%s : table-cards + chaque cellule porte un data-label",
+    (page, labels) => {
+      const src = readFileSync(
+        join(__dirname, "..", "src", "pages", "admin", `${page}.tsx`),
+        "utf8",
+      );
+      expect(src).toMatch(/table-wrap table-cards/);
+      for (const l of labels) {
+        expect(
+          src.includes(`data-label="${l}"`),
+          `${page} : data-label « ${l} » manquant`,
+        ).toBe(true);
+      }
+      // Discipline d'exhaustivité : tout <td> du fichier a son data-label.
+      const tdCount = (src.match(/<td\b/g) ?? []).length;
+      const labelCount = (src.match(/data-label=/g) ?? []).length;
+      expect(
+        labelCount,
+        `${page} : ${labelCount} data-label pour ${tdCount} <td>`,
+      ).toBe(tdCount);
+    },
+  );
+});
+
+describe("R2 — POS : panier en panneau bas (≤ 480 px)", () => {
+  it("la feuille expose la barre panier mobile", () => {
+    expect(css).toMatch(/\.pos-bar-toggle\s*\{\s*display:\s*none/);
+    expect(css).toMatch(
+      /@media\s+screen\s+and\s+\(max-width:\s*480px\)[\s\S]*?\.pos-bar\s*\{[\s\S]*?position:\s*fixed/,
+    );
+    expect(css).toMatch(
+      /\.pos-bar:not\(\.open\) \.pos-bar-body\s*\{\s*display:\s*none/,
+    );
+    expect(css).toMatch(/\.pos-cart-count\s*\{/);
+  });
+
+  it("PosPage câble poignée, compteur, total et corps repliable", () => {
+    const src = readFileSync(
+      join(__dirname, "..", "src", "pages", "vendor", "PosPage.tsx"),
+      "utf8",
+    );
+    expect(src).toMatch(/pos-cart pos-bar\$\{cartOpen \? " open" : ""\}/);
+    expect(src).toMatch(/className="pos-bar-toggle"/);
+    expect(src).toMatch(/className="pos-cart-count"/);
+    expect(src).toMatch(/className="pos-bar-total money"/);
+    expect(src).toMatch(/className="pos-bar-body"/);
+    expect(src).toMatch(/aria-expanded=\{cartOpen\}/);
+    expect(src).toMatch(/className="empty empty-block"/);
+    expect(src).toMatch(/className="pay-grid pos-bar-actions"/);
+    expect(src).toMatch(/className="name product-name"/);
+  });
+});
+
+describe("R2 — Formulaires en 1 colonne ≤ 640 px", () => {
+  it("les champs .row > .field passent pleine largeur sur téléphone", () => {
+    expect(css).toMatch(
+      /@media\s+screen\s+and\s+\(max-width:\s*640px\)[\s\S]*?\.row > \.field\s*\{[\s\S]*?flex:\s*1 1 100%/,
+    );
+  });
+});
