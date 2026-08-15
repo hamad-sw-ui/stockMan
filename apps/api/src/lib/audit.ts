@@ -22,6 +22,7 @@ export interface AuditEntry {
     | "CONFIG"
     | "LICENSE"
     | "IMPORT"
+    | "EXPORT"
     | "MIGRATION"
     | "REVALUE"
     | "PAYMENT"

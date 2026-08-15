@@ -6,12 +6,13 @@ import {
   Card,
   Field,
   Input,
+  Modal,
   PageHeader,
   Select,
   Spinner,
   Tabs,
 } from "../../components/ui";
-import { patch, post, put } from "../../lib/http";
+import { download, patch, post, put } from "../../lib/http";
 import { invalidateQueries, useQuery } from "../../lib/query";
 import { useAuth } from "../../store/auth";
 import { useToast } from "../../store/toast";
@@ -254,6 +255,7 @@ function CompanyTab() {
       </Card>
       <CashPrefsCard />
       <WeightedBarcodeCard />
+      <BackupRestoreCard />
     </>
   );
 }
@@ -395,6 +397,202 @@ function WeightedBarcodeCard() {
           Appliquer
         </Button>
       </div>
+    </Card>
+  );
+}
+
+/* -------------------- Sauvegarde & restauration (D1/D2) -------------------- */
+interface ImportReport {
+  ok: true;
+  version: number;
+  exportedAt: string;
+  tenantName: string | null;
+  tables: Record<string, number>;
+  totalRows: number;
+  ignoredSections: string[];
+  remappedUserRefs: number;
+  skippedSecretConfigs: number;
+}
+
+function BackupRestoreCard() {
+  const { show } = useToast();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const payloadRef = useRef<unknown>(null);
+  const [exporting, setExporting] = useState(false);
+  const [phase, setPhase] = useState<"idle" | "preview" | "applying" | "done">(
+    "idle",
+  );
+  const [report, setReport] = useState<ImportReport | null>(null);
+  const [confirmText, setConfirmText] = useState("");
+
+  const doExport = async () => {
+    setExporting(true);
+    try {
+      const stamp = new Date().toISOString().slice(0, 16).replace(/[-:T]/g, "");
+      await download("/tenant/export", `stockman-export-${stamp}.json`);
+      show("Sauvegarde complète téléchargée.", "success");
+    } catch (e) {
+      show(e instanceof Error ? e.message : "Export impossible", "error");
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const onFile = async (f: File) => {
+    try {
+      const parsed: unknown = JSON.parse(await f.text());
+      payloadRef.current = parsed;
+      const r = await post<{ mode: string; report: ImportReport }>(
+        "/tenant/import?mode=preview",
+        parsed,
+      );
+      setReport(r.report);
+      setConfirmText("");
+      setPhase("preview");
+    } catch (e) {
+      show(
+        e instanceof SyntaxError
+          ? "Ce fichier n'est pas un JSON valide : utilisez le fichier produit par « Exporter »."
+          : e instanceof Error
+            ? e.message
+            : "Fichier illisible",
+        "error",
+      );
+    } finally {
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  };
+
+  const applyReplace = async () => {
+    if (confirmText.trim().toUpperCase() !== "RESTAURER") return;
+    setPhase("applying");
+    try {
+      await post("/tenant/import?mode=replace", payloadRef.current);
+      setPhase("done");
+      show("Données restaurées. Rechargement de l'application…", "success");
+      setTimeout(() => window.location.reload(), 1500);
+    } catch (e) {
+      setPhase("preview");
+      show(e instanceof Error ? e.message : "Restauration impossible", "error");
+    }
+  };
+
+  return (
+    <Card title="Sauvegarde & restauration des données">
+      <p className="muted" style={{ marginTop: 0 }}>
+        Exportez l'intégralité de vos données (JSON) à tout moment — archive,
+        clôture d'exercice, migration. La restauration se fait après un contrôle
+        complet du fichier, en une seule opération tout-ou-rien.
+      </p>
+      <div className="row" style={{ flexWrap: "wrap", gap: 8 }}>
+        <Button size="sm" loading={exporting} onClick={doExport}>
+          ⬇️ Exporter toutes mes données
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => fileRef.current?.click()}
+        >
+          ⬆️ Restaurer depuis une sauvegarde…
+        </Button>
+        <input
+          ref={fileRef}
+          type="file"
+          accept=".json,application/json"
+          className="sr-only"
+          aria-hidden
+          tabIndex={-1}
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) void onFile(f);
+          }}
+        />
+      </div>
+      <p className="muted" style={{ fontSize: "0.8rem", marginBottom: 0 }}>
+        ℹ️ Une sauvegarde serveur globale complète ce fichier (voir runbook :
+        script <code>scripts/backup.sh</code>, rétention 14 jours).
+      </p>
+
+      {phase !== "idle" && report ? (
+        <Modal
+          title="Restauration — contrôle du fichier"
+          onClose={() => phase !== "applying" && setPhase("idle")}
+          footer={
+            <>
+              <Button
+                variant="outline"
+                onClick={() => setPhase("idle")}
+                disabled={phase === "applying"}
+              >
+                Annuler
+              </Button>
+              <Button
+                variant="danger"
+                loading={phase === "applying"}
+                disabled={confirmText.trim().toUpperCase() !== "RESTAURER"}
+                onClick={applyReplace}
+              >
+                ⚠️ Remplacer toutes mes données
+              </Button>
+            </>
+          }
+        >
+          <p style={{ marginTop: 0 }}>
+            Fichier du <strong>{report.exportedAt.slice(0, 10)}</strong>
+            {report.tenantName ? (
+              <>
+                {" "}
+                — boutique <strong>« {report.tenantName} »</strong>
+              </>
+            ) : null}{" "}
+            : <strong>{report.totalRows}</strong> lignes réparties ainsi :
+          </p>
+          <div
+            style={{
+              maxHeight: 200,
+              overflowY: "auto",
+              fontSize: "0.85rem",
+              border: "1px solid var(--line, #e2e8f0)",
+              borderRadius: 8,
+              padding: 8,
+              marginBottom: 10,
+            }}
+          >
+            {Object.entries(report.tables).map(([t, n]) => (
+              <div key={t} className="row-between" style={{ padding: "2px 0" }}>
+                <span className="muted">{t}</span>
+                <strong>{n}</strong>
+              </div>
+            ))}
+          </div>
+          {report.ignoredSections.length > 0 ? (
+            <p className="muted" style={{ fontSize: "0.82rem" }}>
+              ⚠️ Sections ignorées (inconnues de cette version) :{" "}
+              {report.ignoredSections.join(", ")}.
+            </p>
+          ) : null}
+          {report.remappedUserRefs > 0 ? (
+            <p className="muted" style={{ fontSize: "0.82rem" }}>
+              ⚠️ {report.remappedUserRefs} référence(s) à des comptes
+              utilisateurs absents seront rattachées à votre compte.
+            </p>
+          ) : null}
+          <p className="muted" style={{ fontSize: "0.82rem" }}>
+            🔐 Vos clés SMS/WhatsApp actuelles sont préservées (les secrets ne
+            voyagent jamais dans le fichier).
+          </p>
+          <p style={{ color: "var(--danger)", fontWeight: 600 }}>
+            Toutes vos données actuelles seront remplacées par celles du
+            fichier. Tapez « RESTAURER » pour autoriser :
+          </p>
+          <Input
+            value={confirmText}
+            onChange={(e) => setConfirmText(e.target.value)}
+            placeholder="RESTAURER"
+            aria-label="Confirmation de restauration"
+          />
+        </Modal>
+      ) : null}
     </Card>
   );
 }

@@ -16,6 +16,7 @@ import saleRoutes from "./routes/sales";
 import posRoutes from "./routes/pos";
 import userRoutes from "./routes/users";
 import tenantRoutes from "./routes/tenants";
+import tenantDataRoutes from "./routes/tenantData";
 import licenseRoutes from "./routes/licenses";
 import reportRoutes from "./routes/reports";
 import notificationRoutes from "./routes/notifications";
@@ -58,6 +59,9 @@ export function buildApp() {
     }),
   );
 
+  // Sauvegarde/restauration des données (D2) : le snapshot JSON peut
+  // dépasser 1 Mo — parseur dédié enregistré AVANT le parseur général.
+  app.use("/api/tenant/import", express.json({ limit: "25mb" }));
   app.use(express.json({ limit: "1mb" }));
   // Corps brut texte uniquement pour l'import CSV produits (POST /api/products/import)
   app.use(express.text({ type: ["text/csv", "text/plain"], limit: "300kb" }));
@@ -105,6 +109,7 @@ export function buildApp() {
   app.use("/api/products", productRoutes);
   app.use("/api/users", userRoutes);
   app.use("/api/tenants", tenantRoutes);
+  app.use("/api/tenant", tenantDataRoutes);
   app.use("/api/licenses", licenseRoutes);
   app.use("/api/reports", reportRoutes);
   app.use("/api/notifications", notificationRoutes);

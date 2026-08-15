@@ -282,6 +282,25 @@ export const ROUTES: RouteDoc[] = [
   },
   {
     method: "get",
+    path: "/api/suppliers/export/csv",
+    tag: "Fournisseurs",
+    summary:
+      "Export CSV des fournisseurs (Nom;Email;Téléphone;Adresse;Délai livraison (jours);Notes) — téléchargement.",
+    role: "ADMIN",
+  },
+  {
+    method: "post",
+    path: "/api/suppliers/import",
+    tag: "Fournisseurs",
+    summary:
+      "Import CSV fournisseurs : en-tête « Nom;Email;Téléphone;Adresse;Délai livraison (jours);Notes », ≤ 1 000 lignes, upsert par nom (casse indifférente, champs absents conservés), erreurs par ligne.",
+    role: "ADMIN",
+    body: "csv",
+    returns: "{ created, updated, errors[] (ligne, message), total }",
+    errors: ["400 CSV_EMPTY / CSV_HEADER / CSV_TOO_MANY"],
+  },
+  {
+    method: "get",
     path: "/api/suppliers/{id}",
     tag: "Catalogue",
     summary: "Fiche fournisseur + historique des réceptions.",
@@ -736,6 +755,14 @@ export const ROUTES: RouteDoc[] = [
   },
   {
     method: "get",
+    path: "/api/sales/export/csv",
+    tag: "Ventes",
+    summary:
+      "Export CSV du journal des ventes (Date;Ticket;Client;Vendeur;Dépôt;Lignes;Total;Payé;Reste;Paiement;Référence;Statut) — filtres from/to (YYYY-MM-DD), plafond 20 000 lignes, vendeur limité à ses propres ventes.",
+    role: "AUTH",
+  },
+  {
+    method: "get",
     path: "/api/sales",
     tag: "Ventes",
     summary: "Ventes paginées : filtres période/dépôt/vendeur/paiement/statut.",
@@ -823,6 +850,25 @@ export const ROUTES: RouteDoc[] = [
       phone: "string?",
       creditLimit: "number (0 = aucune limite)",
     },
+  },
+  {
+    method: "get",
+    path: "/api/customers/export/csv",
+    tag: "Clients",
+    summary:
+      "Export CSV du carnet clients (Nom;Téléphone;Email;Adresse;Plafond crédit;Canal prix;Solde;Notes) — téléchargement.",
+    role: "ADMIN",
+  },
+  {
+    method: "post",
+    path: "/api/customers/import",
+    tag: "Clients",
+    summary:
+      "Import CSV clients : en-tête « Nom;Téléphone;Email;Adresse;Plafond crédit;Canal prix (gros/détail);Notes », ≤ 1 000 lignes, upsert par téléphone sinon nom (casse indifférente — les champs absents CONSERVENT l'existant), erreurs par ligne.",
+    role: "ADMIN",
+    body: "csv",
+    returns: "{ created, updated, errors[] (ligne, message), total }",
+    errors: ["400 CSV_EMPTY / CSV_HEADER / CSV_TOO_MANY"],
   },
   {
     method: "get",
@@ -1800,6 +1846,30 @@ export const ROUTES: RouteDoc[] = [
       "Définir les clés système (Africa’s Talking, WhatsApp, …) — audit CONFIG, jamais renvoyées en clair ensuite.",
     role: "SA",
     body: { entries: "[{ key, value, isSecret? }]" },
+  },
+  {
+    method: "get",
+    path: "/api/tenant/export",
+    tag: "Configuration",
+    summary:
+      "D1 — Export intégral des données du tenant : snapshot JSON versionné (stockman-export v1, toutes les tables métier dans l'ordre FK, compteurs). Secrets (mots de passe, clés SMS) JAMAIS exportés ; journalisé (EXPORT).",
+    role: "ADMIN",
+  },
+  {
+    method: "post",
+    path: "/api/tenant/import",
+    tag: "Configuration",
+    summary:
+      "D2 — Restauration des données : mode=preview (validation + rapport sans écriture : compteurs par table, sections ignorées, réf. utilisateurs rabattues) ; mode=replace (purge ciblée du tenant + réinsertion en UNE transaction tout-ou-rien, séquences reprises, secrets préservés, journalisé IMPORT). Corps = fichier d'export (≤ 25 Mo).",
+    role: "ADMIN",
+    body: {
+      format: '"stockman-export"',
+      version: "1",
+      data: "{ <table>: lignes[] }",
+    },
+    errors: [
+      "400 IMPORT_FORMAT / IMPORT_VERSION / IMPORT_TOO_LARGE / IMPORT_ROW_INVALID",
+    ],
   },
   {
     method: "get",

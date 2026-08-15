@@ -36,6 +36,7 @@ const MOUNTS: Array<[string, string]> = [
   ["invoices.ts", "/api/invoices"],
   ["serials.ts", "/api/serials"],
   ["pricing.ts", "/api/pricing"],
+  ["tenantData.ts", "/api/tenant"],
   ["catalog.ts", "/api"],
 ];
 

@@ -4,6 +4,7 @@ import { query } from "../config/db";
 import { h } from "../lib/asyncHandler";
 import { HttpError } from "../lib/errors";
 import { writeAudit } from "../lib/audit";
+import { parseCsv, normHeader, buildCsv } from "../lib/csv";
 import { authenticate, AuthRequest, requireRole } from "../middleware/auth";
 import { requireActiveLicense } from "../middleware/license";
 import {
@@ -552,6 +553,165 @@ router.delete(
       previousState: r.rows[0],
     });
     res.json({ message: "Fournisseur supprimé." });
+  }),
+);
+
+/* ====================== FOURNISSEURS — CSV (D3) ========================== */
+const SUPPLIER_IMPORT_MAX_ROWS = 1000;
+
+router.get(
+  "/suppliers/export/csv",
+  requireRole("ADMIN"),
+  h(async (req, res) => {
+    const t = (req as AuthRequest).user.tenantId;
+    const r = await query(
+      `SELECT name, email, phone, address, default_lead_time_days, notes
+         FROM suppliers WHERE tenant_id=$1 ORDER BY name`,
+      [t],
+    );
+    const csv = buildCsv(
+      [
+        "Nom",
+        "Email",
+        "Téléphone",
+        "Adresse",
+        "Délai livraison (jours)",
+        "Notes",
+      ],
+      r.rows.map((s) => [
+        s.name,
+        s.email ?? "",
+        s.phone ?? "",
+        s.address ?? "",
+        s.default_lead_time_days ?? "",
+        s.notes ?? "",
+      ]),
+    );
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader(
+      "Content-Disposition",
+      'attachment; filename="fournisseurs-stockman.csv"',
+    );
+    res.send(csv);
+  }),
+);
+
+router.post(
+  "/suppliers/import",
+  ...adminWrite,
+  h(async (req, res) => {
+    const u = (req as AuthRequest).user;
+    const text = typeof req.body === "string" ? req.body : "";
+    if (!text.trim())
+      throw HttpError.badRequest(
+        "CSV_EMPTY",
+        "Corps text/csv attendu : envoyez le fichier en brut (Content-Type: text/csv).",
+      );
+    const rows = parseCsv(text);
+    if (rows.length < 2)
+      throw HttpError.badRequest(
+        "CSV_EMPTY",
+        "Le fichier ne contient aucune ligne de données.",
+      );
+    const header = rows[0]!.map(normHeader);
+    const findCol = (preds: string[], prefix = false) =>
+      header.findIndex((hh) =>
+        prefix ? preds.some((p) => hh.startsWith(p)) : preds.includes(hh),
+      );
+    const cols = {
+      name: findCol(["nom", "fournisseur", "supplier", "name"]),
+      email: findCol(["email", "e mail", "courriel"]),
+      phone: findCol(["telephone", "tel", "phone", "numero"]),
+      address: findCol(["adresse", "address"]),
+      lead: findCol(["delai", "livraison", "lead"], true),
+      notes: findCol(["notes", "note", "observation"], true),
+    };
+    if (cols.name < 0)
+      throw HttpError.badRequest(
+        "CSV_HEADER",
+        "Colonnes reconnues : Nom;Email;Téléphone;Adresse;Délai livraison (jours);Notes.",
+      );
+    const dataRows = rows.slice(1);
+    if (dataRows.length > SUPPLIER_IMPORT_MAX_ROWS)
+      throw HttpError.badRequest(
+        "CSV_TOO_MANY",
+        `Maximum ${SUPPLIER_IMPORT_MAX_ROWS} lignes par import (${dataRows.length} reçues) : découpez le fichier.`,
+      );
+
+    let created = 0,
+      updated = 0;
+    const errors: Array<{ ligne: number; message: string }> = [];
+    const cell = (row: string[], idx: number) =>
+      idx >= 0 ? (row[idx] ?? "").trim() : "";
+
+    for (let i = 0; i < dataRows.length; i += 1) {
+      const ligne = i + 2;
+      const row = dataRows[i]!;
+      try {
+        const name = cell(row, cols.name);
+        if (name.length < 2)
+          throw new Error("Nom manquant (2 caractères min).");
+        if (name.length > 255) throw new Error("Nom trop long (255 max).");
+        const emailRaw = cell(row, cols.email) || null;
+        if (emailRaw && !/^\S+@\S+\.\S+$/.test(emailRaw))
+          throw new Error(`Email illisible : « ${emailRaw} ».`);
+        const phone = cell(row, cols.phone) || null;
+        const address = cell(row, cols.address) || null;
+        const notes = cell(row, cols.notes) || null;
+        const leadRaw = cell(row, cols.lead);
+        let lead: number | null = null;
+        if (leadRaw !== "") {
+          const n = Number(leadRaw.replace(",", "."));
+          if (!Number.isFinite(n) || n < 0 || n > 365 || !Number.isInteger(n))
+            throw new Error(`Délai illisible : « ${leadRaw} » (entier 0–365).`);
+          lead = n;
+        }
+        const existing = await query<{ id: string }>(
+          "SELECT id FROM suppliers WHERE tenant_id=$1 AND lower(name)=lower($2) LIMIT 1",
+          [u.tenantId, name],
+        );
+        if (existing.rows[0]) {
+          await query(
+            `UPDATE suppliers SET email=COALESCE($3,email), phone=COALESCE($4,phone),
+               address=COALESCE($5,address), default_lead_time_days=COALESCE($6,default_lead_time_days),
+               notes=COALESCE($7,notes), updated_at=now()
+             WHERE id=$1 AND tenant_id=$2`,
+            [
+              existing.rows[0].id,
+              u.tenantId,
+              emailRaw,
+              phone,
+              address,
+              lead,
+              notes,
+            ],
+          );
+          updated += 1;
+        } else {
+          await query(
+            `INSERT INTO suppliers (tenant_id, name, email, phone, address, notes, default_lead_time_days)
+             VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+            [u.tenantId, name, emailRaw, phone, address, notes, lead],
+          );
+          created += 1;
+        }
+      } catch (err) {
+        if (errors.length < 100)
+          errors.push({
+            ligne,
+            message: err instanceof Error ? err.message : "Erreur inconnue",
+          });
+      }
+    }
+    await writeAudit({
+      tenantId: u.tenantId,
+      userId: u.id,
+      userName: u.name,
+      action: "IMPORT",
+      entity: "supplier",
+      details: `Import CSV fournisseurs : ${created} créés, ${updated} mis à jour, ${errors.length} erreur(s).`,
+    });
+    res.json({ created, updated, errors, total: dataRows.length });
   }),
 );
 

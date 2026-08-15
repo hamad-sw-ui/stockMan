@@ -16,6 +16,7 @@ import {
 import { del, get, patch, post } from "../../lib/http";
 import { formatDate, formatMoney, formatQty } from "../../lib/format";
 import { invalidateQueries, useQuery } from "../../lib/query";
+import { ExportCsvButton, ImportCsvButton } from "../../components/CsvTransfer";
 import { useToast } from "../../store/toast";
 import type { Supplier } from "../../lib/types";
 
@@ -116,9 +117,20 @@ export default function SuppliersPage() {
         title="Fournisseurs"
         sub="Carnet d’adresses et historique des livraisons"
         actions={
-          <Button onClick={() => setForm({ ...blank })}>
-            ➕ Nouveau fournisseur
-          </Button>
+          <>
+            <ExportCsvButton
+              endpoint="/suppliers/export/csv"
+              filename="fournisseurs-stockman.csv"
+            />
+            <ImportCsvButton
+              endpoint="/suppliers/import"
+              acceptNote="Colonnes : Nom;Email;Téléphone;Adresse;Délai livraison (jours);Notes."
+              onDone={() => invalidateQueries("suppliers:")}
+            />
+            <Button onClick={() => setForm({ ...blank })}>
+              ➕ Nouveau fournisseur
+            </Button>
+          </>
         }
       />
       <Card className="filters">

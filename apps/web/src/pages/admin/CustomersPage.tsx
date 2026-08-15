@@ -26,6 +26,7 @@ import {
   paymentMethodLabel,
 } from "../../lib/format";
 import { invalidateQueries, useQuery } from "../../lib/query";
+import { ExportCsvButton, ImportCsvButton } from "../../components/CsvTransfer";
 import { useToast } from "../../store/toast";
 import type {
   Customer,
@@ -168,9 +169,20 @@ export default function CustomersPage() {
         title="Clients & crédit"
         sub="Carnet de dettes, plafonds de crédit et relances"
         actions={
-          <Button onClick={() => setForm({ ...blank })}>
-            ➕ Nouveau client
-          </Button>
+          <>
+            <ExportCsvButton
+              endpoint="/customers/export/csv"
+              filename="clients-stockman.csv"
+            />
+            <ImportCsvButton
+              endpoint="/customers/import"
+              acceptNote="Colonnes : Nom;Téléphone;Email;Adresse;Plafond crédit;Canal prix (gros/détail);Notes."
+              onDone={() => invalidateQueries("customers:")}
+            />
+            <Button onClick={() => setForm({ ...blank })}>
+              ➕ Nouveau client
+            </Button>
+          </>
         }
       />
 

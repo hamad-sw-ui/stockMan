@@ -93,7 +93,10 @@ Codes courants : `VALIDATION_ERROR` (400, `details.issues`), `INVALID_CREDENTIAL
 | Console éditeur                                    | `/api/tenants                                 | licenses                                              | configs | reports/superadmin | */supervision`    | SUPER_ADMIN |
 | Notifications · paramètres d'alertes               | `/api/notifications*`                         | lecture AUTH, réglages ADMIN                          |
 | Audit                                              | `/api/audit-logs*`                            | lecture ADMIN / supervision SA                        |
-| Clients · crédit · relances                        | `/api/customers*`                             | ADMIN (sélection caisse : tout rôle)                  |
+| Clients · crédit · relances · CSV                  | `/api/customers*`                             | ADMIN (sélection caisse : tout rôle)                  |
+| Fournisseurs · CSV                                 | `/api/suppliers*`                             | ADMIN                                                 |
+| Export CSV ventes                                  | `/api/sales/export/csv`                       | tout rôle (vendeur : ses ventes)                      |
+| Snapshot tenant (export/import intégral)           | `/api/tenant/export`, `/api/tenant/import`    | ADMIN                                                 |
 | Devis / proforma                                   | `/api/quotes*`                                | ADMIN                                                 |
 | Commandes fournisseurs · retours · OTIF            | `/api/purchase-orders*`                       | ADMIN                                                 |
 | Campagnes d'inventaire                             | `/api/inventory-campaigns*`                   | ADMIN                                                 |
@@ -114,6 +117,43 @@ Codes courants : `VALIDATION_ERROR` (400, `details.issues`), `INVALID_CREDENTIAL
 | **E6 Sessions de caisse**  | `GET/POST /api/cash-sessions` · `GET /current` · `POST /{id}/close`                                                                                                                                                                                                                                          | fond d'ouverture, attendu par méthode, compté, écart ; vente interdite hors session si `cash_session_required=true` ; Z émis à la clôture, journée verrouillée                                                                                                                     |
 | **E7 Fiscalité CM**        | `GET /api/invoices` (+`/by-sale/{saleId}`) · `GET /api/reports/vat-journal` · `GET /api/reports/exports/syscohada-sales                                                                                                                                                                                      | receivables                                                                                                                                                                                                                                                                        | inventory`                                                                                                                                                          | TVA par produit (19,25 %/exonéré) ; numérotation continue par série/année verrouillée ; facture immuable (VOID → avoir ; retour partiel → avoir partiel) ; mentions NIU/RCCM |
 | **E8 Maturité**            | `GET /api/stock/transit` · `POST /api/stock/import` · `GET/POST/PATCH/DELETE /api/pricing/promotions` · `GET /api/pricing/price-history/{productId}` · `GET/POST /api/serials/product/{productId}` · `GET /api/serials/lookup` · `GET/PUT /api/products/{id}/depot-settings` · `GET /api/reports/stock-kpis` | transit visible + réception partielle écartée ; IMEI obligatoire à la vente d'un produit sérialisé (1 numéro = 1 article) ; promo produit > globale ; plafond de remise par rôle (403 `DISCOUNT_LIMIT_EXCEEDED`) ; seuils par dépôt + rayonnages ; ABC/rotation/couverture/dormant |
+
+### Export / import intégral du tenant (D1–D3 · v2.2)
+
+```
+GET  /api/tenant/export                      → attachment JSON (stockman-export v1)
+POST /api/tenant/import?mode=preview|replace Content-Type: application/json (≤ 25 Mo)
+```
+
+Snapshot **versionné** `{ format: "stockman-export", version: 1, exportedAt, sections:
+{ <table>: ligneCount }, data: { <table>: lignes[] } }` — 43 tables métier dans
+l'ordre des dépendances FK. Jamais exportés : `password_hash`, sessions/refresh
+tokens, licences/plans/configs système, journal d'audit, ni aucune clé secrète
+tenant (SMS/WhatsApp) — celles-ci sont **préservées** lors d'une restauration.
+
+- `mode=preview` : validation complète sans écriture → `{ rapport : { tables,
+ignoredSections, demotedUserRefs, warnings } }` (aucun effet de bord).
+- `mode=replace` : purge ciblée du tenant signé (cascades incluses) puis
+  réinsertion chunkée dans **une seule transaction** ; séquences d'identité
+  réalignées ; références utilisateurs inconnues rabattues sur l'admin
+  important ; audit `IMPORT` (et `EXPORT` au téléchargement).
+- Erreurs typées : `400 IMPORT_FORMAT / IMPORT_VERSION / IMPORT_TOO_LARGE /
+IMPORT_ROW_INVALID` — toute ligne invalide **annule tout**.
+
+### CSV partenaires & ventes (D3)
+
+```
+GET  /api/customers/export/csv        → CSV (BOM, « ; », CRLF)
+POST /api/customers/import            upsert : téléphone sinon nom (casse indifférente)
+GET  /api/suppliers/export/csv        → CSV idem
+POST /api/suppliers/import            upsert : nom (casse indifférente)
+GET  /api/sales/export/csv?from&to    → journal des ventes (≤ 20 000 lignes,
+                                        vendeur limité aux siennes, audit EXPORT)
+```
+
+Format maison identique à l'export produits : BOM `\ufeff`, séparateur `;`,
+CRLF, chaque cellule entre guillemets. Imports ≤ 500 lignes, lignes invalides
+rapportées sans bloquer les valides (`{ created, updated, total, errors }`).
 
 ### Import catalogue (CSV)
 

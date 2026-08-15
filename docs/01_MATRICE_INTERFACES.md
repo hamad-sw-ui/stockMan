@@ -73,7 +73,7 @@ CRUD complet (`GET/POST /api/depots`, `PATCH /:id` avec activation) ; vue **stoc
 
 ### 2.6 Fournisseurs — ✅
 
-CRUD complet (`GET/POST/PATCH/DELETE`) ; fiche avec **historique des réceptions** ; association aux lots (`stock_batches.supplier_id`) — suppression tolérante (réceptions conservées, `SET NULL`).
+CRUD complet (`GET/POST/PATCH/DELETE`) ; fiche avec **historique des réceptions** ; association aux lots (`stock_batches.supplier_id`) — suppression tolérante (réceptions conservées, `SET NULL`). **Transferts CSV** (D3) : export (`GET /api/suppliers/export/csv`, format maison BOM/`;` listé ci-dessous) et **import/upsert** par nom (`POST /api/suppliers/import`, compte-rendu créés/mis à jour/refusés en modale).
 
 ### 2.7 Entrées de stock / Réceptions fournisseurs — ✅
 
@@ -89,7 +89,7 @@ CRUD complet (`GET/POST/PATCH/DELETE`) ; fiche avec **historique des réceptions
 
 ### 2.10 Ventes (historique & détail) — ✅
 
-Liste paginée + filtres période/dépôt/vendeur/paiement/statut ; **détail** (lignes avec unité/variante, lots consommés FEFO, **coût figé par ligne**, numéros de série vendus, retours) ; **annulation** `POST /:id/void` (statut VOIDED, restock `VOID` au même coût, motif tracé — émet un **avoir** si la vente était facturée) ; **retours partiels** `POST /:id/returns` (restock `RETURN`) ; **versements** `POST /:id/payments` (crédit client : encaissements successifs, idempotents hors-ligne via `client_payment_id`, reçu « reste à payer ») ; reçu ré-imprimable + **lien WhatsApp** ; badge ventes re-synchronisées offline.
+Liste paginée + filtres période/dépôt/vendeur/paiement/statut ; **détail** (lignes avec unité/variante, lots consommés FEFO, **coût figé par ligne**, numéros de série vendus, retours) ; **annulation** `POST /:id/void` (statut VOIDED, restock `VOID` au même coût, motif tracé — émet un **avoir** si la vente était facturée) ; **retours partiels** `POST /:id/returns` (restock `RETURN`) ; **versements** `POST /:id/payments` (crédit client : encaissements successifs, idempotents hors-ligne via `client_payment_id`, reçu « reste à payer ») ; reçu ré-imprimable + **lien WhatsApp** ; badge ventes re-synchronisées offline. **Export CSV du journal** (D3) : `GET /api/sales/export/csv?from&to` — plafond 20 000 lignes, le vendeur ne reçoit que ses propres ventes, audit `EXPORT`.
 
 ### 2.11 Équipe / Vendeurs — ✅
 
@@ -105,7 +105,7 @@ Cloche Shell + page historique paginée (statuts SENT/FAILED/READ, marquer lu/to
 
 ### 2.14 Paramètres tenant — ✅
 
-Profil entreprise (nom, téléphone, logo **data-URL**, couleur → thème white-label), fuseau/devise, page **Abonnement** (plan, échéance, usage vs plafonds, grille tarifaire), compte propre (mot de passe + PIN).
+Profil entreprise (nom, téléphone, logo **data-URL**, couleur → thème white-label), fuseau/devise, page **Abonnement** (plan, échéance, usage vs plafonds, grille tarifaire), compte propre (mot de passe + PIN). **Carte « Sauvegarde & restauration » (D1/D2)** : export JSON intégral du tenant (`GET /api/tenant/export`, snapshot `stockman-export` v1), restauration guidée en trois temps — fichier → **prévisualisation** (`mode=preview` : compteurs par table, avertissements, références utilisateurs rabattues) → saisie de « RESTAURER » → **remplacement transactionnel** (`mode=replace`) puis rechargement ; codes-barres : préfixe interne GS1 magasin et **décodage des balances à pesée** (OFF/PRICE/WEIGHT).
 
 ### 2.15 Journal d'audit — ✅
 
@@ -113,7 +113,7 @@ Helper `writeAudit` sur **toutes** les mutations sensibles (catalogue, stock, ve
 
 ### 2.16 Clients & crédit (carnet de dettes) — ✅
 
-CRUD (`GET/POST /api/customers`, `PATCH /:id`) ; fiche avec **solde, plafond de crédit, historique des ventes à crédit et des versements**, **vieillissement des créances 30/60/90** ; **relance SMS/WhatsApp** (`POST /:id/remind` — connecteurs existants, tracée) ; canal tarifaire **détail/gros** par client ; blocage vente à crédit au-delà du plafond.
+CRUD (`GET/POST /api/customers`, `PATCH /:id`) ; fiche avec **solde, plafond de crédit, historique des ventes à crédit et des versements**, **vieillissement des créances 30/60/90** ; **relance SMS/WhatsApp** (`POST /:id/remind` — connecteurs existants, tracée) ; canal tarifaire **détail/gros** par client ; blocage vente à crédit au-delà du plafond. **Transferts CSV** (D3) : export (`GET /api/customers/export/csv`) et **import/upsert** par téléphone sinon nom (`POST /api/customers/import` — le canal tarifaire n'est modifié que s'il est explicitement fourni).
 
 ### 2.17 Devis & proforma — ✅
 

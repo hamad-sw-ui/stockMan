@@ -14,6 +14,8 @@ import {
   qty,
 } from "../middleware/validate";
 import * as saleService from "../services/saleService";
+import { buildCsv } from "../lib/csv";
+import { writeAudit } from "../lib/audit";
 
 const router = Router();
 router.use(authenticate);
@@ -320,6 +322,103 @@ router.post(
       req.body.reason,
     );
     res.status(201).json(result);
+  }),
+);
+
+// ============================ EXPORT CSV (D3) ===============================
+// Journal des ventes (comptabilité terrain) en un téléchargement ; mêmes
+// filtres usuels que la liste (période from/to), plafond 20 000 lignes.
+router.get(
+  "/export/csv",
+  h(async (req, res) => {
+    const u = (req as AuthRequest).user;
+    const from =
+      typeof req.query.from === "string" &&
+      /^\d{4}-\d{2}-\d{2}$/.test(req.query.from)
+        ? req.query.from
+        : null;
+    const to =
+      typeof req.query.to === "string" &&
+      /^\d{4}-\d{2}-\d{2}$/.test(req.query.to)
+        ? req.query.to
+        : null;
+    const params: unknown[] = [u.tenantId];
+    const conds = ["s.tenant_id = $1"];
+    // Le vendeur ne voit/exporte que SES ventes (règle RBAC de la liste).
+    if (u.role === "VENDEUR") conds.push(`s.vendor_id = $${params.push(u.id)}`);
+    if (from)
+      conds.push(
+        `s.created_at >= $${params.push(new Date(`${from}T00:00:00.000Z`))}`,
+      );
+    if (to)
+      conds.push(
+        `s.created_at < $${params.push(new Date(new Date(`${to}T00:00:00.000Z`).getTime() + 86_400_000))}`,
+      );
+    const r = await query(
+      `SELECT s.created_at, s.id, cu.name AS customer_name, vu.name AS vendor_name, d.name AS depot_name,
+              COALESCE(lc.c,0)::int AS line_count,
+              s.total_amount::float, s.amount_paid::float,
+              (s.total_amount - s.amount_paid)::float AS outstanding,
+              s.payment_method, s.payment_reference, s.status, s.payment_status
+         FROM sales s
+         JOIN users vu ON vu.id = s.vendor_id
+         JOIN depots d ON d.id = s.depot_id
+         LEFT JOIN customers cu ON cu.id = s.customer_id
+         LEFT JOIN (SELECT sale_id, COUNT(*)::int AS c FROM sale_items GROUP BY sale_id) lc
+           ON lc.sale_id = s.id
+        WHERE ${conds.join(" AND ")}
+        ORDER BY s.created_at DESC
+        LIMIT 20000`,
+      params,
+    );
+    const csv = buildCsv(
+      [
+        "Date",
+        "Ticket",
+        "Client",
+        "Vendeur",
+        "Dépôt",
+        "Lignes",
+        "Total",
+        "Payé",
+        "Reste à payer",
+        "Paiement",
+        "Référence",
+        "Statut",
+      ],
+      r.rows.map((s) => [
+        new Date(s.created_at).toLocaleString("fr-FR"),
+        String(s.id).slice(0, 8),
+        s.customer_name ?? "",
+        s.vendor_name,
+        s.depot_name,
+        s.line_count,
+        s.total_amount,
+        s.amount_paid,
+        s.outstanding,
+        s.payment_method,
+        s.payment_reference ?? "",
+        s.status === "VOIDED"
+          ? "ANNULÉE"
+          : s.payment_status === "PAID"
+            ? "SOLDÉE"
+            : "CRÉDIT",
+      ]),
+    );
+    await writeAudit({
+      tenantId: u.tenantId,
+      userId: u.id,
+      userName: u.name,
+      action: "EXPORT",
+      entity: "sale",
+      details: `Export CSV du journal des ventes : ${r.rows.length} ligne(s) (${from ?? "…"} → ${to ?? "…"}).`,
+    });
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader(
+      "Content-Disposition",
+      'attachment; filename="ventes-stockman.csv"',
+    );
+    res.send(csv);
   }),
 );
 

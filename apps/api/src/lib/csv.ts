@@ -64,3 +64,11 @@ export function parseMoney(raw: string): number | null {
   if (!/^-?\d+(\.\d{1,4})?$/.test(s)) return null;
   return Number(s);
 }
+
+/** Sérialise une table en CSV « ; » RFC 4180 (+ BOM Excel), miroir de parseCsv. */
+export function buildCsv(header: string[], rows: unknown[][]): string {
+  const esc = (c: unknown) => `"${String(c ?? "").replaceAll('"', '""')}"`;
+  return (
+    "﻿" + [header, ...rows].map((line) => line.map(esc).join(";")).join("\r\n")
+  );
+}
