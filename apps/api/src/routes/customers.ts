@@ -284,6 +284,69 @@ router.post(
   }),
 );
 
+// ============================ RELANCE EN LOT (actions groupées) ============
+// Relance SMS/WhatsApp de plusieurs clients (sélection multiple du carnet).
+// Les clients sans numéro sont comptés comme « skipped » (aucun échec global).
+router.post(
+  "/bulk-remind",
+  requireRole("ADMIN"),
+  validateBody(
+    z.object({
+      ids: z.array(z.string().uuid()).min(1).max(200),
+      channel: z.enum(["SMS", "WHATSAPP"]).default("SMS"),
+    }),
+  ),
+  h(async (req, res) => {
+    const u = (req as AuthRequest).user;
+    const b = req.body as { ids: string[]; channel: "SMS" | "WHATSAPP" };
+    const unique = [...new Set(b.ids)];
+    const ph = unique.map((_, i) => `$${i + 2}`).join(",");
+    const customers = await query<{
+      id: string;
+      name: string;
+      phone: string | null;
+      balance: number;
+    }>(
+      `SELECT id, name, phone, balance::float FROM customers
+        WHERE tenant_id=$1 AND id IN (${ph})`,
+      [u.tenantId, ...unique],
+    );
+    const t = await query<{ name: string; currency: string }>(
+      "SELECT name, currency FROM tenants WHERE id=$1",
+      [u.tenantId],
+    );
+    const day = new Date().toISOString().slice(0, 10);
+    let sent = 0;
+    let skipped = 0;
+    for (const c of customers.rows) {
+      if (!c.phone) {
+        skipped += 1;
+        continue;
+      }
+      const message = `Bonjour ${c.name}, votre solde chez ${t.rows[0]!.name} est de ${c.balance.toLocaleString("fr-FR")} ${t.rows[0]!.currency}. Merci de passer régulariser.`;
+      const status = await notify({
+        tenantId: u.tenantId,
+        channel: b.channel,
+        phone: c.phone,
+        message,
+        type: "DEBT_REMINDER",
+        dedupeKey: `REMIND:${day}:${c.id}:${b.channel}`,
+      });
+      await writeAudit({
+        tenantId: u.tenantId,
+        userId: u.id,
+        userName: u.name,
+        action: "REMIND",
+        entity: "customer",
+        entityId: c.id,
+        details: `Relance lot ${b.channel} → ${c.phone} (${status})`,
+      });
+      sent += 1;
+    }
+    res.json({ sent, skipped, total: unique.length });
+  }),
+);
+
 /* ============================ CSV (D3) ==================================== */
 // Export : carnet clients complet (admin). Import : miroir de l'import
 // produits — colonnes Nom;Téléphone;Email;Adresse;Plafond crédit;Canal prix;

@@ -490,6 +490,16 @@ export const ROUTES: RouteDoc[] = [
   },
   {
     method: "post",
+    path: "/api/products/bulk-archive",
+    tag: "Produits",
+    summary:
+      "Archivage en lot (sélection multiple) : soft-delete transactionnel de plusieurs produits actifs, journalisé ; renvoie le nombre réellement archivé.",
+    role: "ADMIN",
+    body: { ids: "string (uuid)[] (1..200)" },
+    returns: "{ archived: number }",
+  },
+  {
+    method: "post",
     path: "/api/products/{id}/archive",
     tag: "Produits",
     summary:
@@ -887,6 +897,16 @@ export const ROUTES: RouteDoc[] = [
       "Mettre à jour la fiche client (dont plafond de crédit, activation).",
     role: "ADMIN",
     params: [{ name: "id", in: "path", type: UUID }],
+  },
+  {
+    method: "post",
+    path: "/api/customers/bulk-remind",
+    tag: "Clients",
+    summary:
+      "Relance en lot (sélection multiple) : SMS/WhatsApp à plusieurs clients, les clients sans numéro sont comptés « skipped ».",
+    role: "ADMIN",
+    body: { ids: "string (uuid)[] (1..200)", channel: "SMS | WHATSAPP" },
+    returns: "{ sent, skipped, total }",
   },
   {
     method: "post",
@@ -1870,6 +1890,15 @@ export const ROUTES: RouteDoc[] = [
     errors: [
       "400 IMPORT_FORMAT / IMPORT_VERSION / IMPORT_TOO_LARGE / IMPORT_ROW_INVALID",
     ],
+  },
+  {
+    method: "get",
+    path: "/api/configs/public",
+    tag: "Configuration",
+    summary:
+      "Configuration système publique (non-secrète) : numéro WhatsApp de support pour le renouvellement d’abonnement (null tant que l’éditeur ne l’a pas renseigné).",
+    role: "AUTH",
+    returns: "{ supportWhatsapp: string | null }",
   },
   {
     method: "get",

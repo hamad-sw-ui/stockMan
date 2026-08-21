@@ -8,6 +8,7 @@ import {
   Badge,
   Button,
   Card,
+  ConfirmModal,
   EmptyState,
   Field,
   Kpi,
@@ -15,7 +16,7 @@ import {
   Spinner,
   Tabs,
 } from "../../components/ui";
-import { download, get } from "../../lib/http";
+import { download, get, post } from "../../lib/http";
 import {
   formatDate,
   formatMoney,
@@ -79,6 +80,42 @@ interface ZData {
   byVendor: Array<{ vendor: string; count: number; amount: number }>;
   voids: { voided: number; amount: number };
 }
+interface CogsData {
+  range: { from: string; to: string; timezone: string };
+  revenue: number;
+  cogs: number;
+  margin: number;
+  margin_pct: number;
+  sales_count: number;
+  qty_sold: number;
+}
+interface StockKpisRow {
+  product_id: string;
+  name: string;
+  barcode: string | null;
+  unit: string | null;
+  current_stock: number;
+  reserved: number;
+  avg_cost: number;
+  stock_value: number;
+  qty_sold_90d: number;
+  avg_daily: number;
+  coverage_days: number;
+  turnover_90d: number;
+  abc_class: "A" | "B" | "C";
+  last_sale_at: string | null;
+  days_since_sale: number;
+  dormant: boolean;
+}
+interface StockKpisData {
+  totals: {
+    stock_value: number;
+    references: number;
+    dormant_count: number;
+    dormant_value: number;
+  };
+  data: StockKpisRow[];
+}
 
 const today = () => new Date().toISOString().slice(0, 10);
 const daysAgo = (n: number) =>
@@ -94,6 +131,8 @@ const VALID_TABS = [
   "predictif",
   "cloture",
   "tva",
+  "cogs",
+  "kpis",
 ];
 
 export default function ReportsPage() {
@@ -108,6 +147,36 @@ export default function ReportsPage() {
   const { show } = useToast();
   const [data, setData] = useState<unknown>(null);
   const [loading, setLoading] = useState(false);
+  const [revalueOpen, setRevalueOpen] = useState(false);
+  const [revalueBusy, setRevalueBusy] = useState(false);
+
+  const doRevalue = async () => {
+    setRevalueBusy(true);
+    try {
+      const report = await post<{
+        products: number;
+        batches: number;
+        saleItems: number;
+      }>("/reports/costs-revalue");
+      show(
+        t("pages.reports.revalueToast", {
+          products: report.products,
+          batches: report.batches,
+          saleItems: report.saleItems,
+        }),
+        "success",
+      );
+      setRevalueOpen(false);
+      await load("kpis");
+    } catch (e) {
+      show(
+        e instanceof Error ? e.message : t("pages.reports.loadError"),
+        "error",
+      );
+    } finally {
+      setRevalueBusy(false);
+    }
+  };
 
   const rangeQuery = `from=${from}&to=${to}`;
   const endpoints: Record<string, { path: string; csvName: string }> = {
@@ -129,6 +198,14 @@ export default function ReportsPage() {
     tva: {
       path: `/reports/vat-journal?${rangeQuery}`,
       csvName: `journal_tva_${from}_${to}.csv`,
+    },
+    cogs: {
+      path: `/reports/cogs?${rangeQuery}`,
+      csvName: "",
+    },
+    kpis: {
+      path: "/reports/stock-kpis",
+      csvName: "kpi_stock.csv",
     },
   };
 
@@ -213,6 +290,9 @@ export default function ReportsPage() {
     if (tab === "predictif")
       return { kind: "predictif", rows: data as PredictiveRow[] } as const;
     if (tab === "tva") return { kind: "tva", d: data as VatJournal } as const;
+    if (tab === "cogs") return { kind: "cogs", d: data as CogsData } as const;
+    if (tab === "kpis")
+      return { kind: "kpis", d: data as StockKpisData } as const;
     return { kind: "cloture", d: data as ZData } as const;
   }, [data, tab]);
 
@@ -286,6 +366,8 @@ export default function ReportsPage() {
           { id: "predictif", label: t("pages.reports.tabPredictive") },
           { id: "cloture", label: t("pages.reports.tabZ") },
           { id: "tva", label: t("pages.reports.tabVat") },
+          { id: "cogs", label: t("pages.reports.tabCogs") },
+          { id: "kpis", label: t("pages.reports.tabKpis") },
         ]}
       />
 
@@ -769,6 +851,158 @@ export default function ReportsPage() {
             </div>
           </Card>
         </>
+      ) : view.kind === "cogs" ? (
+        <>
+          <div className="kpi-grid">
+            <Kpi
+              label={t("pages.reports.cogsRevenue")}
+              value={formatMoney(view.d.revenue)}
+            />
+            <Kpi
+              label={t("pages.reports.cogsValue")}
+              value={formatMoney(view.d.cogs)}
+            />
+            <Kpi
+              label={t("pages.reports.cogsMargin")}
+              value={formatMoney(view.d.margin)}
+              tone={view.d.margin < 0 ? "warn" : "ok"}
+              sub={t("pages.reports.cogsMarginPct", {
+                pct: view.d.margin_pct,
+              })}
+            />
+            <Kpi
+              label={t("pages.cashSessions.kpiSalesCount")}
+              value={formatQty(view.d.sales_count)}
+              sub={t("pages.reports.cogsQtySold", {
+                qty: formatQty(view.d.qty_sold),
+              })}
+            />
+          </div>
+          <Card>
+            <p className="muted" style={{ margin: 0 }}>
+              {t("pages.reports.cogsBody")}
+            </p>
+          </Card>
+        </>
+      ) : view.kind === "kpis" ? (
+        <>
+          <div className="kpi-grid">
+            <Kpi
+              label={t("pages.reports.kpisValue")}
+              value={formatMoney(view.d.totals.stock_value)}
+            />
+            <Kpi
+              label={t("pages.reports.kpisReferences")}
+              value={formatQty(view.d.totals.references)}
+            />
+            <Kpi
+              label={t("pages.reports.kpisDormantCount")}
+              value={formatQty(view.d.totals.dormant_count)}
+              tone={view.d.totals.dormant_count > 0 ? "warn" : undefined}
+            />
+            <Kpi
+              label={t("pages.reports.kpisDormantValue")}
+              value={formatMoney(view.d.totals.dormant_value)}
+            />
+          </div>
+
+          <Card
+            title={t("pages.reports.kpisRevalueTitle")}
+            actions={
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setRevalueOpen(true)}
+              >
+                {t("pages.reports.kpisRevalueButton")}
+              </Button>
+            }
+          >
+            <p className="muted" style={{ margin: 0 }}>
+              {t("pages.reports.kpisRevalueBody")}
+            </p>
+          </Card>
+
+          <Card title={t("pages.reports.kpisTableTitle")} pad={false}>
+            <div
+              className="table-wrap"
+              style={{ maxHeight: 480, overflow: "auto" }}
+            >
+              <table>
+                <thead>
+                  <tr>
+                    <th>{t("fields.product")}</th>
+                    <th className="num">{t("pages.reports.kpisColStock")}</th>
+                    <th className="num">{t("pages.reports.kpisColValue")}</th>
+                    <th className="num">{t("pages.reports.kpisColSold90")}</th>
+                    <th className="num">
+                      {t("pages.reports.kpisColCoverage")}
+                    </th>
+                    <th className="num">
+                      {t("pages.reports.kpisColTurnover")}
+                    </th>
+                    <th>{t("pages.reports.kpisColAbc")}</th>
+                    <th>{t("pages.reports.kpisColDormant")}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {view.d.data.map((r) => (
+                    <tr key={r.product_id}>
+                      <td>
+                        {r.name}
+                        {r.barcode ? (
+                          <div className="muted" style={{ fontSize: "0.8rem" }}>
+                            {r.barcode}
+                          </div>
+                        ) : null}
+                      </td>
+                      <td className="num">
+                        {formatQty(r.current_stock)} {r.unit ?? ""}
+                      </td>
+                      <td className="num">{formatMoney(r.stock_value)}</td>
+                      <td className="num">{formatQty(r.qty_sold_90d)}</td>
+                      <td className="num">
+                        {r.coverage_days >= 999
+                          ? "—"
+                          : t("pages.reports.kpisCoverageDays", {
+                              days: r.coverage_days,
+                            })}
+                      </td>
+                      <td className="num">{formatQty(r.turnover_90d)}</td>
+                      <td>
+                        <Badge
+                          tone={
+                            r.abc_class === "A"
+                              ? "ok"
+                              : r.abc_class === "B"
+                                ? "info"
+                                : "muted"
+                          }
+                        >
+                          {r.abc_class}
+                        </Badge>
+                      </td>
+                      <td>
+                        {r.dormant ? (
+                          <Badge tone="warn">
+                            {t("pages.reports.kpisDormant")}
+                          </Badge>
+                        ) : null}
+                      </td>
+                    </tr>
+                  ))}
+                  {view.d.data.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} className="muted">
+                        {t("pages.reports.kpisEmpty")}
+                      </td>
+                    </tr>
+                  ) : null}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        </>
       ) : (
         (() => {
           const z = view.d;
@@ -869,6 +1103,17 @@ export default function ReportsPage() {
           );
         })()
       )}
+
+      {revalueOpen ? (
+        <ConfirmModal
+          title={t("pages.reports.revalueTitle")}
+          message={<>{t("pages.reports.revalueBody")}</>}
+          confirmLabel={t("pages.reports.kpisRevalueButton")}
+          onConfirm={doRevalue}
+          onClose={() => setRevalueOpen(false)}
+          loading={revalueBusy}
+        />
+      ) : null}
     </div>
   );
 }

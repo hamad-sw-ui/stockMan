@@ -18,6 +18,10 @@ import { del, get, patch, post } from "../../lib/http";
 import { formatDate, formatMoney, formatQty } from "../../lib/format";
 import { invalidateQueries, useQuery } from "../../lib/query";
 import { ExportCsvButton, ImportCsvButton } from "../../components/CsvTransfer";
+import { BulkBar } from "../../components/BulkBar";
+import { useSelection } from "../../lib/selection";
+import { useHotkeys } from "../../lib/hotkeys";
+import { buildCsv, downloadText } from "../../lib/csv";
 import { useToast } from "../../store/toast";
 import type { Supplier } from "../../lib/types";
 
@@ -121,6 +125,25 @@ export default function SuppliersPage() {
       (s.phone ?? "").includes(search),
   );
 
+  // Sélection multiple + export groupé.
+  const pick = useSelection<string>();
+  useHotkeys({ Escape: () => pick.clear() });
+
+  const exportSelected = () => {
+    const sel = filtered.filter((s) => pick.has(s.id));
+    const csv = buildCsv([
+      ["Nom", "Téléphone", "Email", "Délai (j)", "Réceptions"],
+      ...sel.map((s) => [
+        s.name,
+        s.phone ?? "",
+        s.email ?? "",
+        s.default_lead_time_days ?? "",
+        s.receipt_count ?? 0,
+      ]),
+    ]);
+    downloadText(csv, "selection-fournisseurs.csv");
+  };
+
   return (
     <div className="wrap">
       <PageHeader
@@ -175,6 +198,21 @@ export default function SuppliersPage() {
             <table>
               <thead>
                 <tr>
+                  <th style={{ width: 30 }}>
+                    <input
+                      type="checkbox"
+                      aria-label={t("pages.suppliers.selectAllAria")}
+                      checked={
+                        filtered.length > 0 && filtered.every((s) => pick.has(s.id))
+                      }
+                      onChange={(e) =>
+                        pick.toggleAll(
+                          filtered.map((s) => s.id),
+                          e.target.checked,
+                        )
+                      }
+                    />
+                  </th>
                   <th>{t("fields.name")}</th>
                   <th>{t("fields.phone")}</th>
                   <th>{t("fields.email")}</th>
@@ -186,6 +224,16 @@ export default function SuppliersPage() {
               <tbody>
                 {filtered.map((s) => (
                   <tr key={s.id}>
+                    <td data-label="" onClick={(e) => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        checked={pick.has(s.id)}
+                        onChange={() => pick.toggle(s.id)}
+                        aria-label={t("pages.suppliers.selectAria", {
+                          name: s.name,
+                        })}
+                      />
+                    </td>
                     <td data-label={t("fields.name")}>
                       <button
                         className="btn btn-ghost btn-sm"
@@ -258,6 +306,20 @@ export default function SuppliersPage() {
           </div>
         </Card>
       )}
+
+      {pick.size > 0 ? (
+        <BulkBar
+          count={pick.size}
+          onClear={pick.clear}
+          actions={[
+            {
+              label: t("pages.suppliers.exportSelected"),
+              variant: "outline",
+              onClick: exportSelected,
+            },
+          ]}
+        />
+      ) : null}
 
       {form ? (
         <Modal

@@ -13,6 +13,7 @@ import {
   Input,
   Modal,
   PageHeader,
+  SearchInput,
   Spinner,
 } from "../../components/ui";
 import { del, patch, post } from "../../lib/http";
@@ -33,6 +34,14 @@ export default function UnitsPage() {
   } | null>(null);
   const [toDelete, setToDelete] = useState<Unit | null>(null);
   const [busy, setBusy] = useState(false);
+  const [search, setSearch] = useState("");
+
+  const rows = (q.data ?? []).filter(
+    (u) =>
+      !search ||
+      u.name.toLowerCase().includes(search.toLowerCase()) ||
+      u.symbol.toLowerCase().includes(search.toLowerCase()),
+  );
 
   const save = async () => {
     if (!form) return;
@@ -100,6 +109,13 @@ export default function UnitsPage() {
           </Button>
         }
       />
+      {q.data?.length ? (
+        <SearchInput
+          value={search}
+          onChange={setSearch}
+          placeholder={t("pages.units.searchPlaceholder")}
+        />
+      ) : null}
       {q.loading ? (
         <Spinner label={t("common.loading")} />
       ) : q.error ? (
@@ -142,7 +158,7 @@ export default function UnitsPage() {
                 </tr>
               </thead>
               <tbody>
-                {q.data.map((u) => (
+                {rows.map((u) => (
                   <tr key={u.id}>
                     <td style={{ fontWeight: 700 }}>{u.name}</td>
                     <td className="muted">{u.symbol}</td>

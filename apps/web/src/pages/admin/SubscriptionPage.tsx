@@ -33,9 +33,14 @@ function daysLeft(endDate: string): number {
   return Math.round((end.getTime() - now.getTime()) / 86_400_000);
 }
 
+interface PublicConfig {
+  supportWhatsapp: string | null;
+}
+
 export default function SubscriptionPage() {
   const { t } = useTranslation();
   const q = useQuery<TenantCurrent>("tenant:current", "/tenants/current");
+  const pub = useQuery<PublicConfig>("configs:public", "/configs/public");
 
   if (q.loading)
     return (
@@ -201,14 +206,20 @@ export default function SubscriptionPage() {
                 <li>{t("pages.subscription.step3")}</li>
               </ol>
               <div className="row" style={{ marginTop: 12 }}>
-                <a
-                  className="btn btn-primary"
-                  href={`https://wa.me/237600000000?text=${encodeURIComponent(t("pages.subscription.whatsappMsg"))}`}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  {t("pages.subscription.whatsappButton")}
-                </a>
+                {pub.data?.supportWhatsapp ? (
+                  <a
+                    className="btn btn-primary"
+                    href={`https://wa.me/${pub.data.supportWhatsapp}?text=${encodeURIComponent(t("pages.subscription.whatsappMsg"))}`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    {t("pages.subscription.whatsappButton")}
+                  </a>
+                ) : (
+                  <p className="muted" style={{ margin: 0 }}>
+                    {t("pages.subscription.noSupport")}
+                  </p>
+                )}
               </div>
               <p
                 className="muted"

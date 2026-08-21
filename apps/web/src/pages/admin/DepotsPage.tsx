@@ -16,6 +16,7 @@ import {
   Input,
   Modal,
   PageHeader,
+  SearchInput,
   Select,
   Spinner,
   Tabs,
@@ -65,6 +66,14 @@ function DepotsTab() {
     }>;
   } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [search, setSearch] = useState("");
+  const depots = (q.data ?? []).filter(
+    (d) =>
+      !search ||
+      d.name.toLowerCase().includes(search.toLowerCase()) ||
+      (d.address ?? "").toLowerCase().includes(search.toLowerCase()) ||
+      (d.phone ?? "").includes(search),
+  );
 
   const save = async () => {
     if (!form) return;
@@ -116,6 +125,13 @@ function DepotsTab() {
 
   return (
     <>
+      {q.data?.length ? (
+        <SearchInput
+          value={search}
+          onChange={setSearch}
+          placeholder={t("pages.depots.searchPlaceholder")}
+        />
+      ) : null}
       {q.loading ? (
         <Spinner label={t("common.loading")} />
       ) : q.error ? (
@@ -130,7 +146,7 @@ function DepotsTab() {
             gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
           }}
         >
-          {(q.data ?? []).map((d) => (
+          {depots.map((d) => (
             <Card key={d.id}>
               <div className="row-between">
                 <h3 style={{ margin: 0 }}>🏬 {d.name}</h3>

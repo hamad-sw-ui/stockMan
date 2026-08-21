@@ -16,11 +16,15 @@ import {
   Select,
   Spinner,
 } from "../../components/ui";
-import { download, upload } from "../../lib/http";
+import { download, post, upload } from "../../lib/http";
 import { ScanField } from "../../components/ScanField";
 import { LabelsPrintModal } from "../../components/LabelsPrintModal";
+import { BulkBar } from "../../components/BulkBar";
 import { formatMoney, formatQty, stockStatusLabel } from "../../lib/format";
 import { invalidateQueries, useQuery } from "../../lib/query";
+import { useSelection } from "../../lib/selection";
+import { useHotkeys } from "../../lib/hotkeys";
+import { buildCsv, downloadText } from "../../lib/csv";
 import { useToast } from "../../store/toast";
 import { useAuth } from "../../store/auth";
 import type { Category, Depot, Paged, ProductListItem } from "../../lib/types";
@@ -67,6 +71,8 @@ export default function ProductsPage() {
   const categories = useQuery<Category[]>("categories:list", "/categories");
   const depots = useQuery<Depot[]>("depots:list", "/depots");
 
+  const productRows = products.data?.data ?? [];
+
   useEffect(() => setPage(1), [q, categoryId, depotId, status]);
   const setParam = (k: string, v: string) => {
     const next = new URLSearchParams(params);
@@ -87,16 +93,48 @@ export default function ProductsPage() {
   const fileRef = useRef<HTMLInputElement>(null);
   const [importing, setImporting] = useState(false);
   const [report, setReport] = useState<ImportResult | null>(null);
-  // C4 — file d'impression d'étiquettes (multi-sélection du tableau)
-  const [labelPick, setLabelPick] = useState<Set<string>>(new Set());
+  // Sélection multiple (étiquettes + actions groupées)
+  const pick = useSelection<string>();
   const [labelsOpen, setLabelsOpen] = useState(false);
-  const toggleLabelPick = (id: string) =>
-    setLabelPick((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
+  const [bulkBusy, setBulkBusy] = useState(false);
+
+  // Raccourcis : Échap efface la sélection ; Ctrl+K place le focus sur la recherche.
+  const searchRef = useRef<HTMLInputElement>(null);
+  useHotkeys({
+    Escape: () => pick.clear(),
+    "ctrl+k": () => searchRef.current?.focus(),
+  });
+
+  const archiveSelected = async () => {
+    setBulkBusy(true);
+    try {
+      const r = await post<{ archived: number }>("/products/bulk-archive", {
+        ids: pick.ids(),
+      });
+      show(t("pages.products.archivedCount", { count: r.archived }), "success");
+      pick.clear();
+      invalidateQueries("products:");
+    } catch (e) {
+      show(e instanceof Error ? e.message : t("pages.products.saveError"), "error");
+    } finally {
+      setBulkBusy(false);
+    }
+  };
+
+  const exportSelected = () => {
+    const rows = (products.data?.data ?? []).filter((p) => pick.has(p.id));
+    const csv = buildCsv([
+      ["Nom", "Code-barres", "Catégorie", "Prix vente", "Stock"],
+      ...rows.map((p) => [
+        p.name,
+        p.barcode ?? "",
+        p.category_name ?? "",
+        p.selling_price,
+        depotId ? p.depot_qty : p.total_qty,
+      ]),
+    ]);
+    downloadText(csv, "selection-produits.csv");
+  };
   const importCsv = async (file: File) => {
     if (file.size > 280 * 1024) {
       show(t("pages.products.fileTooBig"), "error");
@@ -190,6 +228,7 @@ export default function ProductsPage() {
             onChange={setSearch}
             placeholder={t("pages.products.searchPlaceholder")}
             autoFocus
+            inputRef={searchRef}
           />
           <div style={{ maxWidth: 320 }}>
             <ScanField
@@ -271,10 +310,22 @@ export default function ProductsPage() {
             <table>
               <thead>
                 <tr>
-                  <th
-                    aria-label={t("pages.products.ariaPickLabels")}
-                    style={{ width: 30 }}
-                  />
+                  <th style={{ width: 30 }}>
+                    <input
+                      type="checkbox"
+                      aria-label={t("pages.products.selectAllAria")}
+                      checked={
+                        productRows.length > 0 &&
+                        productRows.every((p) => pick.has(p.id))
+                      }
+                      onChange={(e) =>
+                        pick.toggleAll(
+                          productRows.map((p) => p.id),
+                          e.target.checked,
+                        )
+                      }
+                    />
+                  </th>
                   <th>{t("fields.product")}</th>
                   <th>{t("fields.category")}</th>
                   <th className="num">{t("pages.products.colSellingPrice")}</th>
@@ -302,17 +353,11 @@ export default function ProductsPage() {
                     <td data-label="" onClick={(e) => e.stopPropagation()}>
                       <input
                         type="checkbox"
-                        checked={labelPick.has(p.id)}
-                        onChange={() => toggleLabelPick(p.id)}
+                        checked={pick.has(p.id)}
+                        onChange={() => pick.toggle(p.id)}
                         aria-label={t("pages.products.pickLabelAria", {
                           name: p.name,
                         })}
-                        disabled={!p.barcode}
-                        title={
-                          p.barcode
-                            ? t("pages.products.pickTitle")
-                            : t("pages.products.notLabelable")
-                        }
                       />
                     </td>
                     <td data-label={t("fields.product")}>
@@ -381,44 +426,39 @@ export default function ProductsPage() {
           onPage={setPage}
         />
       ) : null}
-      {/* C4 — barre flottante « file d'étiquettes » */}
-      {labelPick.size > 0 ? (
-        <div
-          className="row"
-          style={{
-            position: "sticky",
-            bottom: 12,
-            justifyContent: "space-between",
-            background: "var(--surface)",
-            border: "1px solid var(--line, #d7dee6)",
-            borderRadius: "var(--radius, 8px)",
-            padding: "10px 14px",
-            boxShadow: "var(--shadow-m, 0 6px 18px rgba(15,23,42,.12))",
-            marginTop: 10,
-          }}
-        >
-          <span style={{ fontWeight: 600 }}>
-            {t("pages.products.labelsBar", { count: labelPick.size })}
-          </span>
-          <div className="row" style={{ gap: 8 }}>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setLabelPick(new Set())}
-            >
-              {t("pages.products.clearSelection")}
-            </Button>
-            <Button size="sm" onClick={() => setLabelsOpen(true)}>
-              {t("pages.products.printLabels")}
-            </Button>
-          </div>
-        </div>
+      {/* Actions groupées (sélection multiple) */}
+      {pick.size > 0 ? (
+        <BulkBar
+          count={pick.size}
+          countLabel={(n) => t("pages.products.labelsBar", { count: n })}
+          onClear={pick.clear}
+          actions={[
+            {
+              label: t("pages.products.printLabels"),
+              onClick: () => setLabelsOpen(true),
+              disabled: !(products.data?.data ?? []).some(
+                (p) => pick.has(p.id) && p.barcode,
+              ),
+            },
+            {
+              label: t("pages.products.exportSelected"),
+              variant: "outline",
+              onClick: exportSelected,
+            },
+            {
+              label: t("pages.products.archiveSelected"),
+              variant: "danger",
+              onClick: archiveSelected,
+              loading: bulkBusy,
+            },
+          ]}
+        />
       ) : null}
       {labelsOpen ? (
         <LabelsPrintModal
           title={t("pages.products.labelsModalTitle")}
           lines={(products.data?.data ?? [])
-            .filter((p) => labelPick.has(p.id))
+            .filter((p) => pick.has(p.id))
             .map((p) => ({
               key: p.id,
               name: p.name,

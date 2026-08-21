@@ -953,7 +953,7 @@ export default function SettingsPage() {
   const [tab, setTab] = useState("entreprise");
   return (
     <div className="wrap">
-      <PageHeader title={t("nav.settings")} sub={t("pages.settings.sub")} />
+      <PageHeader title={t("shell.nav.settings")} sub={t("pages.settings.sub")} />
       <Tabs
         active={tab}
         onChange={setTab}

@@ -21,6 +21,29 @@ import type { DashboardData } from "../../lib/types";
 const iso = (d: Date) => d.toISOString().slice(0, 10);
 const today = () => iso(new Date());
 const daysAgo = (n: number) => iso(new Date(Date.now() - n * 86_400_000));
+
+const RANGE_STORAGE_KEY = "stockman.dashboard.range";
+
+function loadRange(): { from: string; to: string } {
+  try {
+    const raw = localStorage.getItem(RANGE_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as { from?: string; to?: string };
+      if (parsed.from && parsed.to) return { from: parsed.from, to: parsed.to };
+    }
+  } catch {
+    /* stockage indisponible */
+  }
+  return { from: daysAgo(6), to: today() };
+}
+
+function saveRange(from: string, to: string): void {
+  try {
+    localStorage.setItem(RANGE_STORAGE_KEY, JSON.stringify({ from, to }));
+  } catch {
+    /* non bloquant */
+  }
+}
 /** Jour court jj/mm (resp. mm/dd en anglais) — suit la langue courante. */
 const shortDay = (dateStr: string) => {
   const d = new Date(`${dateStr}T00:00:00`);
@@ -32,8 +55,9 @@ const shortDay = (dateStr: string) => {
 
 export default function DashboardPage() {
   const { t } = useTranslation();
-  const [from, setFrom] = useState(daysAgo(6));
-  const [to, setTo] = useState(today());
+  const initial = loadRange();
+  const [from, setFrom] = useState(initial.from);
+  const [to, setTo] = useState(initial.to);
   const path = `/reports/dashboard?from=${from}&to=${to}`;
   const q = useQuery<DashboardData>(`dashboard:${path}`, path);
 
@@ -58,8 +82,11 @@ export default function DashboardPage() {
                 size="sm"
                 variant="outline"
                 onClick={() => {
-                  setFrom(daysAgo(n - 1));
-                  setTo(today());
+                  const f = daysAgo(n - 1);
+                  const t = today();
+                  setFrom(f);
+                  setTo(t);
+                  saveRange(f, t);
                 }}
               >
                 {t("pages.dashboard.rangeDays", { count: n })}

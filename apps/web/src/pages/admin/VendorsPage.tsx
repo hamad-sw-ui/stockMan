@@ -13,6 +13,7 @@ import {
   Input,
   Modal,
   PageHeader,
+  SearchInput,
   Select,
   Spinner,
 } from "../../components/ui";
@@ -60,6 +61,15 @@ export default function VendorsPage() {
   } | null>(null);
   const [pinReset, setPinReset] = useState<VendorRow | null>(null);
   const [pinValue, setPinValue] = useState("");
+  const [search, setSearch] = useState("");
+
+  const rows = (users.data ?? []).filter(
+    (u) =>
+      !search ||
+      u.name.toLowerCase().includes(search.toLowerCase()) ||
+      u.email.toLowerCase().includes(search.toLowerCase()) ||
+      (u.depot_name ?? "").toLowerCase().includes(search.toLowerCase()),
+  );
 
   const create = useMutation((f: UserForm) =>
     post<{ generatedPassword?: string }>("/users", {
@@ -214,6 +224,13 @@ export default function VendorsPage() {
         }
       />
 
+      {users.data?.length ? (
+        <SearchInput
+          value={search}
+          onChange={setSearch}
+          placeholder={t("pages.vendors.searchPlaceholder")}
+        />
+      ) : null}
       {users.loading ? (
         <Spinner label={t("pages.vendors.loading")} />
       ) : users.error ? (
@@ -240,7 +257,7 @@ export default function VendorsPage() {
                 </tr>
               </thead>
               <tbody>
-                {users.data.map((u) => (
+                {rows.map((u) => (
                   <tr key={u.id}>
                     <td style={{ fontWeight: 700 }}>{u.name}</td>
                     <td className="muted">{u.email}</td>
