@@ -28,6 +28,10 @@ import {
 } from "../../lib/format";
 import { invalidateQueries, useQuery } from "../../lib/query";
 import { ExportCsvButton, ImportCsvButton } from "../../components/CsvTransfer";
+import { BulkBar } from "../../components/BulkBar";
+import { useSelection } from "../../lib/selection";
+import { useHotkeys } from "../../lib/hotkeys";
+import { buildCsv, downloadText } from "../../lib/csv";
 import { useToast } from "../../store/toast";
 import type {
   Customer,
@@ -81,6 +85,48 @@ export default function CustomersPage() {
   const q = useQuery<Paged<Customer>>(`customers:${path}`, path);
   const rows = q.data?.data ?? [];
   const totalDebt = rows.reduce((a, c) => a + Number(c.balance ?? 0), 0);
+
+  // Sélection multiple + actions groupées (export / relance).
+  const pick = useSelection<string>();
+  const [bulkBusy, setBulkBusy] = useState(false);
+  useHotkeys({ Escape: () => pick.clear() });
+
+  const exportSelected = () => {
+    const sel = rows.filter((c) => pick.has(c.id));
+    const csv = buildCsv([
+      ["Nom", "Téléphone", "Email", "Plafond", "Solde dû"],
+      ...sel.map((c) => [
+        c.name,
+        c.phone ?? "",
+        c.email ?? "",
+        c.credit_limit,
+        c.balance,
+      ]),
+    ]);
+    downloadText(csv, "selection-clients.csv");
+  };
+
+  const remindSelected = async () => {
+    setBulkBusy(true);
+    try {
+      const r = await post<{ sent: number; skipped: number }>(
+        "/customers/bulk-remind",
+        { ids: pick.ids(), channel: "SMS" },
+      );
+      show(
+        t("pages.customers.bulkRemindToast", {
+          sent: r.sent,
+          skipped: r.skipped,
+        }),
+        "success",
+      );
+      pick.clear();
+    } catch (e) {
+      show(e instanceof Error ? e.message : t("pages.customers.remindError"), "error");
+    } finally {
+      setBulkBusy(false);
+    }
+  };
 
   /* ------------------------------- CRUD fiche ------------------------------ */
   const save = async () => {
@@ -275,6 +321,19 @@ export default function CustomersPage() {
             <table>
               <thead>
                 <tr>
+                  <th style={{ width: 30 }}>
+                    <input
+                      type="checkbox"
+                      aria-label={t("pages.customers.selectAllAria")}
+                      checked={rows.length > 0 && rows.every((c) => pick.has(c.id))}
+                      onChange={(e) =>
+                        pick.toggleAll(
+                          rows.map((c) => c.id),
+                          e.target.checked,
+                        )
+                      }
+                    />
+                  </th>
                   <th>{t("fields.name")}</th>
                   <th>{t("fields.phone")}</th>
                   <th className="num">{t("pages.customers.colLimit")}</th>
@@ -286,6 +345,16 @@ export default function CustomersPage() {
               <tbody>
                 {rows.map((c) => (
                   <tr key={c.id}>
+                    <td data-label="" onClick={(e) => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        checked={pick.has(c.id)}
+                        onChange={() => pick.toggle(c.id)}
+                        aria-label={t("pages.customers.selectAria", {
+                          name: c.name,
+                        })}
+                      />
+                    </td>
                     <td data-label={t("fields.name")}>
                       <button
                         className="btn btn-ghost btn-sm"
@@ -402,6 +471,25 @@ export default function CustomersPage() {
           totalPages={q.data.totalPages}
           total={q.data.total}
           onPage={setPage}
+        />
+      ) : null}
+
+      {pick.size > 0 ? (
+        <BulkBar
+          count={pick.size}
+          onClear={pick.clear}
+          actions={[
+            {
+              label: t("pages.customers.exportSelected"),
+              variant: "outline",
+              onClick: exportSelected,
+            },
+            {
+              label: t("pages.customers.remindSelected"),
+              onClick: remindSelected,
+              loading: bulkBusy,
+            },
+          ]}
         />
       ) : null}
 

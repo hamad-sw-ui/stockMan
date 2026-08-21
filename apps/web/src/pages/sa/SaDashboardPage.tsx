@@ -73,7 +73,7 @@ export default function SaDashboardPage() {
               title={t("pages.sa.dashboard.trialsTitle")}
               actions={
                 <Link className="btn btn-outline btn-sm" to="/sa/licences">
-                  {t("nav.saLicenses")}
+                  {t("shell.nav.saLicenses")}
                 </Link>
               }
             >

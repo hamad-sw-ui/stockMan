@@ -11,6 +11,7 @@ import {
   ErrorState,
   PageHeader,
   Pagination,
+  SearchInput,
   Spinner,
 } from "../../components/ui";
 import { patch, post } from "../../lib/http";
@@ -43,10 +44,18 @@ export default function NotificationsPage() {
   const { t } = useTranslation();
   const [page, setPage] = useState(1);
   const [status, setStatus] = useState("");
+  const [search, setSearch] = useState("");
   const path = `/notifications?page=${page}&size=25${status ? `&status=${status}` : ""}`;
   const q = useQuery<Paged<NotificationRow> & { unread: number }>(
     `notifications:${path}`,
     path,
+  );
+  const rows = (q.data?.data ?? []).filter(
+    (n) =>
+      !search ||
+      n.message.toLowerCase().includes(search.toLowerCase()) ||
+      (n.phone ?? "").includes(search) ||
+      n.channel.toLowerCase().includes(search.toLowerCase()),
   );
   const { show } = useToast();
   const [busy, setBusy] = useState(false);
@@ -118,6 +127,11 @@ export default function NotificationsPage() {
           </option>
           <option value="READ">{t("pages.notifications.filterRead")}</option>
         </select>
+        <SearchInput
+          value={search}
+          onChange={setSearch}
+          placeholder={t("pages.notifications.searchPlaceholder")}
+        />
       </div>
 
       {q.loading ? (
@@ -146,7 +160,7 @@ export default function NotificationsPage() {
                 </tr>
               </thead>
               <tbody>
-                {q.data.data.map((n) => (
+                {rows.map((n) => (
                   <tr
                     key={n.id}
                     style={

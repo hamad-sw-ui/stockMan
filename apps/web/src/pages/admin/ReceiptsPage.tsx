@@ -14,6 +14,7 @@ import {
   Modal,
   PageHeader,
   Pagination,
+  SearchInput,
   Select,
   Spinner,
 } from "../../components/ui";
@@ -65,8 +66,16 @@ export default function ReceiptsPage() {
   const { user } = useAuth();
   const tenantName = user?.tenant.name ?? null;
   const [page, setPage] = useState(1);
+  const [search, setSearch] = useState("");
   const path = `/stock/receipts?page=${page}&size=20`;
   const q = useQuery<Paged<ReceiptRow>>(`receipts:${path}`, path);
+  const rows = (q.data?.data ?? []).filter(
+    (r) =>
+      !search ||
+      (r.reference ?? "").toLowerCase().includes(search.toLowerCase()) ||
+      (r.supplier_name ?? "").toLowerCase().includes(search.toLowerCase()) ||
+      r.depot_name.toLowerCase().includes(search.toLowerCase()),
+  );
   const suppliers = useQuery<Supplier[]>("suppliers:list", "/suppliers");
   const depots = useQuery<Depot[]>("depots:list", "/depots");
   const units = useQuery<Unit[]>("units:list", "/units");
@@ -361,6 +370,13 @@ export default function ReceiptsPage() {
         }
       />
 
+      {q.data?.data.length ? (
+        <SearchInput
+          value={search}
+          onChange={setSearch}
+          placeholder={t("pages.receipts.searchPlaceholder")}
+        />
+      ) : null}
       {q.loading ? (
         <Spinner label={t("common.loading")} />
       ) : q.error ? (
@@ -402,7 +418,7 @@ export default function ReceiptsPage() {
                 </tr>
               </thead>
               <tbody>
-                {q.data.data.map((r) => (
+                {rows.map((r) => (
                   <tr key={r.id}>
                     <td
                       className="muted"

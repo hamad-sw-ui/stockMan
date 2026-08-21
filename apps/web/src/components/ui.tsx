@@ -4,6 +4,7 @@ import {
   type ButtonHTMLAttributes,
   type InputHTMLAttributes,
   type ReactNode,
+  type RefObject,
   type SelectHTMLAttributes,
   type TextareaHTMLAttributes,
 } from "react";
@@ -131,11 +132,13 @@ export function SearchInput({
   onChange,
   placeholder,
   autoFocus,
+  inputRef,
 }: {
   value: string;
   onChange: (v: string) => void;
   placeholder?: string;
   autoFocus?: boolean;
+  inputRef?: RefObject<HTMLInputElement>;
 }) {
   const { t } = useTranslation();
   const ph = placeholder ?? t("common.search");
@@ -143,6 +146,7 @@ export function SearchInput({
     <div className="input-icon" style={{ flex: 1, minWidth: 180 }}>
       <span>🔎</span>
       <input
+        ref={inputRef}
         className="input"
         value={value}
         onChange={(e) => onChange(e.target.value)}

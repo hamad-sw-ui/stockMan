@@ -4,7 +4,7 @@
  *  avec le formulaire d'ouverture. Hors-ligne, le contrôle reste côté
  *  serveur à la synchronisation. Textes via i18n (I1, clés « gate.* »). */
 import { useTranslation } from "react-i18next";
-import { useQuery } from "../lib/query";
+import { invalidateQueries, useQuery } from "../lib/query";
 import { Card } from "./ui";
 import { OpenSessionForm } from "../pages/vendor/CashSessionPage";
 import type { CashSessionCurrent } from "../lib/types";
@@ -24,7 +24,7 @@ export function CashSessionGate() {
     <div className="modal-backdrop" style={{ zIndex: 60 }}>
       <Card title={t("gate.title")}>
         <p className="muted">{t("gate.body")}</p>
-        <OpenSessionForm onOpened={() => undefined} />
+        <OpenSessionForm onOpened={() => invalidateQueries("cash:")} />
       </Card>
     </div>
   );

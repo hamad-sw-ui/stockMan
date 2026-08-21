@@ -11,6 +11,7 @@ import {
   Input,
   Modal,
   PageHeader,
+  SearchInput,
   Spinner,
 } from "../../components/ui";
 import { del, patch, post } from "../../lib/http";
@@ -30,6 +31,14 @@ export default function CategoriesPage() {
   } | null>(null);
   const [toDelete, setToDelete] = useState<Category | null>(null);
   const [busy, setBusy] = useState(false);
+  const [search, setSearch] = useState("");
+
+  const rows = (q.data ?? []).filter(
+    (c) =>
+      !search ||
+      c.name.toLowerCase().includes(search.toLowerCase()) ||
+      (c.description ?? "").toLowerCase().includes(search.toLowerCase()),
+  );
 
   const save = async () => {
     if (!form) return;
@@ -91,6 +100,13 @@ export default function CategoriesPage() {
           </Button>
         }
       />
+      {q.data?.length ? (
+        <SearchInput
+          value={search}
+          onChange={setSearch}
+          placeholder={t("pages.categories.searchPlaceholder")}
+        />
+      ) : null}
       {q.loading ? (
         <Spinner label={t("common.loading")} />
       ) : q.error ? (
@@ -128,7 +144,7 @@ export default function CategoriesPage() {
                 </tr>
               </thead>
               <tbody>
-                {q.data.map((c) => (
+                {rows.map((c) => (
                   <tr key={c.id}>
                     <td style={{ fontWeight: 700 }}>{c.name}</td>
                     <td className="muted">{c.description ?? "—"}</td>

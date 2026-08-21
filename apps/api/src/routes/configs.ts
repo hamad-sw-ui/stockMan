@@ -83,6 +83,22 @@ router.put(
   }),
 );
 
+// ============================ CONFIG PUBLIQUE (rôles connectés) ============
+// Clés système non-secrètes exposées à tout utilisateur authentifié — ex.
+// `support_whatsapp` : numéro WhatsApp (format international sans « + »)
+// utilisé par la page Abonnement pour le bouton de renouvellement. Absent
+// tant que l'éditeur ne l'a pas renseigné en console SA (clé SYSTEM).
+router.get(
+  "/public",
+  h(async (_req, res) => {
+    const r = await query<{ key: string; value: string }>(
+      "SELECT key, value FROM system_configs WHERE is_secret = false ORDER BY key",
+    );
+    const map = Object.fromEntries(r.rows.map((row) => [row.key, row.value]));
+    res.json({ supportWhatsapp: map.support_whatsapp ?? null });
+  }),
+);
+
 // ============================ CONFIG TENANT (ADMIN) =========================
 // Clés SECRÈTES (identifiants SMS/WhatsApp) : masquées en lecture.
 const TENANT_SECRET_KEYS = [

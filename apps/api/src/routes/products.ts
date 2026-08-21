@@ -1262,6 +1262,48 @@ router.post(
   }),
 );
 
+// ============================ ARCHIVAGE EN LOT (actions groupées) ==========
+// Soft-delete transactionnel de plusieurs produits du tenant (sélection
+// multiple de la liste catalogue), journalisé. N'archive que les produits
+// actifs ; renvoie le nombre réellement archivé (idempotent).
+router.post(
+  "/bulk-archive",
+  ...adminWrite,
+  validateBody(
+    z.object({ ids: z.array(z.string().uuid()).min(1).max(200) }),
+  ),
+  h(async (req, res) => {
+    const u = (req as AuthRequest).user;
+    const { ids } = req.body as { ids: string[] };
+    const unique = [...new Set(ids)];
+    const ph = unique.map((_, i) => `$${i + 2}`).join(",");
+    const r = await withTransaction(async (client) => {
+      const upd = await client.query(
+        `UPDATE products SET archived_at=now(), updated_at=now()
+          WHERE tenant_id=$1 AND id IN (${ph}) AND archived_at IS NULL
+          RETURNING id, name`,
+        [u.tenantId, ...unique],
+      );
+      for (const row of upd.rows) {
+        await writeAudit(
+          {
+            tenantId: u.tenantId,
+            userId: u.id,
+            userName: u.name,
+            action: "ARCHIVE",
+            entity: "product",
+            entityId: row.id,
+            newState: row,
+          },
+          client,
+        );
+      }
+      return upd.rowCount ?? 0;
+    });
+    res.json({ archived: r });
+  }),
+);
+
 router.post(
   "/:id/restore",
   ...adminWrite,

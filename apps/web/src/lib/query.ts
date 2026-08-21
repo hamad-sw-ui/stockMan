@@ -14,9 +14,28 @@ interface QueryState<T> {
 const cache = new Map<string, { data: unknown; at: number }>();
 const CACHE_TTL = 15_000;
 
+/**
+ * Auditeurs d'invalidation : chaque `useQuery` monté s'abonne pour pouvoir
+ * re-fetcher immédiatement lorsque `invalidateQueries` est appelé. Sans ce
+ * mécanisme, vider la Map de cache ne suffisait pas : les composants déjà
+ * montés gardaient leur état local (stale) et ne se mettaient jamais à jour
+ * après une mutation (création / édition / suppression).
+ */
+type InvalidateListener = (prefix?: string) => void;
+const invalidateListeners = new Set<InvalidateListener>();
+
 export function invalidateQueries(prefix?: string): void {
-  if (!prefix) return cache.clear();
-  for (const k of [...cache.keys()]) if (k.startsWith(prefix)) cache.delete(k);
+  if (!prefix) cache.clear();
+  else for (const k of [...cache.keys()]) if (k.startsWith(prefix)) cache.delete(k);
+  for (const listener of [...invalidateListeners]) listener(prefix);
+}
+
+/** S'abonne aux invalidations ; renvoie la fonction de désabonnement. */
+export function onInvalidate(listener: InvalidateListener): () => void {
+  invalidateListeners.add(listener);
+  return () => {
+    invalidateListeners.delete(listener);
+  };
 }
 
 export function useQuery<T = unknown>(
@@ -89,6 +108,15 @@ export function useQuery<T = unknown>(
         loading: false,
         refetching: false,
       });
+  }, [key, path, fetchIt]);
+
+  // Re-fetch automatique lorsqu'une mutation invalide notre préfixe de cache.
+  useEffect(() => {
+    const handler: InvalidateListener = (prefix) => {
+      if (!path) return;
+      if (!prefix || key.startsWith(prefix)) void fetchIt(true);
+    };
+    return onInvalidate(handler);
   }, [key, path, fetchIt]);
 
   return {
